@@ -87,7 +87,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
                 self.storage_updated.value = False
         return self._index
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """
         Insert or update vectors in the Faiss index.
 
@@ -170,7 +170,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
         return [m["__id__"] for m in list_data]
 
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         """
         Search by a textual query; returns top_k results with their metadata + similarity distance.
@@ -240,7 +240,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
             f"Successfully deleted {len(to_remove)} vectors from {self.namespace}"
         )
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """
         Importance notes:
         1. Changes will be persisted to disk during the next index_done_callback
@@ -405,7 +405,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
         logger.debug(f"Found {len(matching_records)} records with prefix '{prefix}'")
         return matching_records
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -426,7 +426,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
 
         return {**metadata, "id": metadata.get("__id__")}
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:

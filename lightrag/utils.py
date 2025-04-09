@@ -513,11 +513,12 @@ async def get_best_cached_response(
     llm_func=None,
     original_prompt=None,
     cache_type=None,
+    workspace="default",
 ) -> str | None:
     logger.debug(
         f"get_best_cached_response:  mode={mode} cache_type={cache_type} use_llm_check={use_llm_check}"
     )
-    mode_cache = await hashing_kv.get_by_id(mode)
+    mode_cache = await hashing_kv.get_by_id(mode, workspace=workspace)
     if not mode_cache:
         return None
 
@@ -648,6 +649,7 @@ async def handle_cache(
     prompt,
     mode="default",
     cache_type=None,
+    workspace="default",
 ):
     """Generic cache handling function"""
     if hashing_kv is None:
@@ -679,6 +681,7 @@ async def handle_cache(
                 llm_func=llm_model_func if use_llm_check else None,
                 original_prompt=prompt,
                 cache_type=cache_type,
+                workspace=workspace,
             )
             if best_cached_response is not None:
                 logger.debug(f"Embedding cached hit(mode:{mode} type:{cache_type})")
@@ -696,9 +699,9 @@ async def handle_cache(
     #     1. All query mode: enable_llm_cache is True and embedding simularity is not enabled
     #     2. Entity extract: enable_llm_cache_for_entity_extract is True
     if exists_func(hashing_kv, "get_by_mode_and_id"):
-        mode_cache = await hashing_kv.get_by_mode_and_id(mode, args_hash) or {}
+        mode_cache = await hashing_kv.get_by_mode_and_id(mode, args_hash, workspace) or {}
     else:
-        mode_cache = await hashing_kv.get_by_id(mode) or {}
+        mode_cache = await hashing_kv.get_by_id(mode, workspace=workspace) or {}
     if args_hash in mode_cache:
         logger.debug(f"Non-embedding cached hit(mode:{mode} type:{cache_type})")
         return mode_cache[args_hash]["return"], None, None, None
@@ -719,7 +722,7 @@ class CacheData:
     cache_type: str = "query"
 
 
-async def save_to_cache(hashing_kv, cache_data: CacheData):
+async def save_to_cache(hashing_kv, cache_data: CacheData, workspace="default"):
     """Save data to cache, with improved handling for streaming responses and duplicate content.
 
     Args:
@@ -738,11 +741,11 @@ async def save_to_cache(hashing_kv, cache_data: CacheData):
     # Get existing cache data
     if exists_func(hashing_kv, "get_by_mode_and_id"):
         mode_cache = (
-            await hashing_kv.get_by_mode_and_id(cache_data.mode, cache_data.args_hash)
+            await hashing_kv.get_by_mode_and_id(cache_data.mode, cache_data.args_hash, workspace)
             or {}
         )
     else:
-        mode_cache = await hashing_kv.get_by_id(cache_data.mode) or {}
+        mode_cache = await hashing_kv.get_by_id(cache_data.mode, workspace) or {}
 
     # Check if we already have identical content cached
     if cache_data.args_hash in mode_cache:
@@ -769,7 +772,7 @@ async def save_to_cache(hashing_kv, cache_data: CacheData):
     }
 
     # Only upsert if there's actual new content
-    await hashing_kv.upsert({cache_data.mode: mode_cache})
+    await hashing_kv.upsert({cache_data.mode: mode_cache}, workspace)
 
 
 def safe_unicode_decode(content):

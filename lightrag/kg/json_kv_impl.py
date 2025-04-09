@@ -94,11 +94,11 @@ class JsonKVStorage(BaseKVStorage):
         async with self._storage_lock:
             return dict(self._data)
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         async with self._storage_lock:
             return self._data.get(id)
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         async with self._storage_lock:
             return [
                 (
@@ -109,11 +109,11 @@ class JsonKVStorage(BaseKVStorage):
                 for id in ids
             ]
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         async with self._storage_lock:
             return set(keys) - set(self._data.keys())
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """
         Importance notes for in-memory storage:
         1. Changes will be persisted to disk during the next index_done_callback

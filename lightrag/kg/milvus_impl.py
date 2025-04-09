@@ -74,7 +74,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             dimension=self.embedding_func.embedding_dim,
         )
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -102,7 +102,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         return results
 
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         embedding = await self.embedding_func([query])
         results = self._client.search(
@@ -125,7 +125,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         # Milvus handles persistence automatically
         pass
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """Delete an entity from the vector database
 
         Args:
@@ -234,7 +234,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error searching for records with prefix '{prefix}': {e}")
             return []
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -259,7 +259,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for ID {id}: {e}")
             return None
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:

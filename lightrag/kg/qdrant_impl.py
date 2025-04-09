@@ -84,7 +84,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
             ),
         )
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -122,7 +122,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         return results
 
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         embedding = await self.embedding_func([query])
         results = self._client.search(
@@ -164,7 +164,7 @@ class QdrantVectorDBStorage(BaseVectorStorage):
         except Exception as e:
             logger.error(f"Error while deleting vectors from {self.namespace}: {e}")
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """Delete an entity by name
 
         Args:

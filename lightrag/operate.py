@@ -212,6 +212,7 @@ async def _merge_nodes_then_upsert(
     nodes_data: list[dict],
     knowledge_graph_inst: BaseGraphStorage,
     global_config: dict,
+    database_name: str,
 ):
     """Get existing nodes from knowledge graph use name,if exists, merge data, else create, then upsert."""
     already_entity_types = []
@@ -393,6 +394,7 @@ async def extract_entities(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
+    workspace: str = "default"
 ) -> None:
     use_llm_func: callable = global_config["llm_model_func"]
     entity_extract_max_gleaning = global_config["entity_extract_max_gleaning"]
@@ -450,7 +452,8 @@ async def extract_entities(
     graph_db_lock = get_graph_db_lock(enable_logging=False)
 
     async def _user_llm_func_with_cache(
-        input_text: str, history_messages: list[dict[str, str]] = None
+        input_text: str, history_messages: list[dict[str, str]] = None,
+        workspace:str = "default"
     ) -> str:
         if enable_llm_cache_for_entity_extract and llm_response_cache:
             if history_messages:
@@ -467,6 +470,7 @@ async def extract_entities(
                 _prompt,
                 "default",
                 cache_type="extract",
+                workspace = workspace,
             )
             if cached_return:
                 logger.debug(f"Found cache for {arg_hash}")
@@ -487,6 +491,7 @@ async def extract_entities(
                     prompt=_prompt,
                     cache_type="extract",
                 ),
+                workspace
             )
             return res
 
@@ -540,7 +545,7 @@ async def extract_entities(
 
         return maybe_nodes, maybe_edges
 
-    async def _process_single_content(chunk_key_dp: tuple[str, TextChunkSchema]):
+    async def _process_single_content(chunk_key_dp: tuple[str, TextChunkSchema], workspace: str):
         """Process a single chunk
         Args:
             chunk_key_dp (tuple[str, TextChunkSchema]):
@@ -558,7 +563,7 @@ async def extract_entities(
             **context_base, input_text="{input_text}"
         ).format(**context_base, input_text=content)
 
-        final_result = await _user_llm_func_with_cache(hint_prompt)
+        final_result = await _user_llm_func_with_cache(hint_prompt, workspace=workspace)
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result)
 
         # Process initial extraction with file path
@@ -569,7 +574,7 @@ async def extract_entities(
         # Process additional gleaning results
         for now_glean_index in range(entity_extract_max_gleaning):
             glean_result = await _user_llm_func_with_cache(
-                continue_prompt, history_messages=history
+                continue_prompt, history_messages=history, workspace=workspace
             )
 
             history += pack_user_ass_to_openai_messages(continue_prompt, glean_result)
@@ -691,10 +696,13 @@ async def kg_query(
         if query_param.model_func
         else global_config["llm_model_func"]
     )
+
+    # return cached response if exists
     args_hash = compute_args_hash(query_param.mode, query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
-        hashing_kv, args_hash, query, query_param.mode, cache_type="query"
+        hashing_kv, args_hash, query, query_param.mode, cache_type="query", workspace= query_param.workspace
     )
+    logger.debug(f"cached_response:{cached_response}, quantized:{quantized}")
     if cached_response is not None:
         return cached_response
 
@@ -790,6 +798,7 @@ async def kg_query(
             mode=query_param.mode,
             cache_type="query",
         ),
+        workspace=query_param.workspace,
     )
     return response
 
@@ -841,7 +850,7 @@ async def extract_keywords_only(
     # 1. Handle cache if needed - add cache type for keywords
     args_hash = compute_args_hash(param.mode, text, cache_type="keywords")
     cached_response, quantized, min_val, max_val = await handle_cache(
-        hashing_kv, args_hash, text, param.mode, cache_type="keywords"
+        hashing_kv, args_hash, text, param.mode, cache_type="keywords", workspace= param.workspace
     )
     if cached_response is not None:
         try:
@@ -919,6 +928,7 @@ async def extract_keywords_only(
                 mode=param.mode,
                 cache_type="keywords",
             ),
+            workspace=param.workspace,
         )
     return hl_keywords, ll_keywords
 
@@ -951,7 +961,7 @@ async def mix_kg_vector_query(
     )
     args_hash = compute_args_hash("mix", query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
-        hashing_kv, args_hash, query, "mix", cache_type="query"
+        hashing_kv, args_hash, query, "mix", cache_type="query", workspace=query_param.workspace
     )
     if cached_response is not None:
         return cached_response
@@ -1228,18 +1238,18 @@ async def _get_node_data(
     )
 
     results = await entities_vdb.query(
-        query, top_k=query_param.top_k, ids=query_param.ids
+        query, top_k=query_param.top_k, ids=query_param.ids, workspace=query_param.workspace,
     )
-
+    logger.debug(f"get entity from db:{results}")
     if not len(results):
         return "", "", ""
     # get entity information
     node_datas, node_degrees = await asyncio.gather(
         asyncio.gather(
-            *[knowledge_graph_inst.get_node(r["entity_name"]) for r in results]
+            *[knowledge_graph_inst.get_node(r["entity_name"], query_param.database_name) for r in results]
         ),
         asyncio.gather(
-            *[knowledge_graph_inst.node_degree(r["entity_name"]) for r in results]
+            *[knowledge_graph_inst.node_degree(r["entity_name"], query_param.database_name) for r in results]
         ),
     )
 
@@ -1365,7 +1375,7 @@ async def _find_most_related_text_unit_from_entities(
         for dp in node_datas
     ]
     edges = await asyncio.gather(
-        *[knowledge_graph_inst.get_node_edges(dp["entity_name"]) for dp in node_datas]
+        *[knowledge_graph_inst.get_node_edges(dp["entity_name"], query_param.database_name) for dp in node_datas]
     )
     all_one_hop_nodes = set()
     for this_edges in edges:
@@ -1375,7 +1385,7 @@ async def _find_most_related_text_unit_from_entities(
 
     all_one_hop_nodes = list(all_one_hop_nodes)
     all_one_hop_nodes_data = await asyncio.gather(
-        *[knowledge_graph_inst.get_node(e) for e in all_one_hop_nodes]
+        *[knowledge_graph_inst.get_node(e, query_param.database_name) for e in all_one_hop_nodes]
     )
 
     # Add null check for node data
@@ -1401,7 +1411,7 @@ async def _find_most_related_text_unit_from_entities(
     for i in range(0, len(tasks), batch_size):
         batch_tasks = tasks[i : i + batch_size]
         batch_results = await asyncio.gather(
-            *[text_chunks_db.get_by_id(c_id) for c_id, _, _ in batch_tasks]
+            *[text_chunks_db.get_by_id(c_id, workspace=query_param.workspace) for c_id, _, _ in batch_tasks]
         )
         results.extend(batch_results)
 
@@ -1506,7 +1516,7 @@ async def _get_edge_data(
     )
 
     results = await relationships_vdb.query(
-        keywords, top_k=query_param.top_k, ids=query_param.ids
+        keywords, top_k=query_param.top_k, ids=query_param.ids, workspace=query_param.workspace
     )
 
     if not len(results):
@@ -1514,11 +1524,11 @@ async def _get_edge_data(
 
     edge_datas, edge_degree = await asyncio.gather(
         asyncio.gather(
-            *[knowledge_graph_inst.get_edge(r["src_id"], r["tgt_id"]) for r in results]
+            *[knowledge_graph_inst.get_edge(r["src_id"], r["tgt_id"], database_name=query_param.database_name) for r in results]
         ),
         asyncio.gather(
             *[
-                knowledge_graph_inst.edge_degree(r["src_id"], r["tgt_id"])
+                knowledge_graph_inst.edge_degree(r["src_id"], r["tgt_id"], database_name=query_param.database_name)
                 for r in results
             ]
         ),
@@ -1643,13 +1653,13 @@ async def _find_most_related_entities_from_relationships(
     node_datas, node_degrees = await asyncio.gather(
         asyncio.gather(
             *[
-                knowledge_graph_inst.get_node(entity_name)
+                knowledge_graph_inst.get_node(entity_name, query_param.database_name)
                 for entity_name in entity_names
             ]
         ),
         asyncio.gather(
             *[
-                knowledge_graph_inst.node_degree(entity_name)
+                knowledge_graph_inst.node_degree(entity_name, query_param.database_name)
                 for entity_name in entity_names
             ]
         ),
@@ -1686,7 +1696,7 @@ async def _find_related_text_unit_from_relationships(
 
     async def fetch_chunk_data(c_id, index):
         if c_id not in all_text_units_lookup:
-            chunk_data = await text_chunks_db.get_by_id(c_id)
+            chunk_data = await text_chunks_db.get_by_id(c_id, query_param.workspace)
             # Only store valid data
             if chunk_data is not None and "content" in chunk_data:
                 all_text_units_lookup[c_id] = {
@@ -1768,19 +1778,19 @@ async def naive_query(
     )
     args_hash = compute_args_hash(query_param.mode, query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
-        hashing_kv, args_hash, query, query_param.mode, cache_type="query"
+        hashing_kv, args_hash, query, query_param.mode, cache_type="query", workspace=query_param.workspace
     )
     if cached_response is not None:
         return cached_response
 
     results = await chunks_vdb.query(
-        query, top_k=query_param.top_k, ids=query_param.ids
+        query, top_k=query_param.top_k, ids=query_param.ids, workspace=query_param.workspace
     )
     if not len(results):
         return PROMPTS["fail_response"]
 
     chunks_ids = [r["id"] for r in results]
-    chunks = await text_chunks_db.get_by_ids(chunks_ids)
+    chunks = await text_chunks_db.get_by_ids(chunks_ids, workspace=query_param.workspace)
 
     # Filter out invalid chunks
     valid_chunks = [

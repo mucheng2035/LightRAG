@@ -77,14 +77,13 @@ class NanoVectorDBStorage(BaseVectorStorage):
 
             return self._client
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """
         Importance notes:
         1. Changes will be persisted to disk during the next index_done_callback
         2. Only one process should updating the storage at a time before index_done_callback,
            KG-storage-log should be used to avoid data corruption
         """
-
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -122,7 +121,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
             )
 
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         # Execute embedding outside of lock to avoid long lock times
         embedding = await self.embedding_func([query])
@@ -170,14 +169,13 @@ class NanoVectorDBStorage(BaseVectorStorage):
         except Exception as e:
             logger.error(f"Error while deleting vectors from {self.namespace}: {e}")
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """
         Importance notes:
         1. Changes will be persisted to disk during the next index_done_callback
         2. Only one process should updating the storage at a time before index_done_callback,
            KG-storage-log should be used to avoid data corruption
         """
-
         try:
             entity_id = compute_mdhash_id(entity_name, prefix="ent-")
             logger.debug(
@@ -277,7 +275,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
         logger.debug(f"Found {len(matching_records)} records with prefix '{prefix}'")
         return matching_records
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -292,7 +290,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
             return result[0]
         return None
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:

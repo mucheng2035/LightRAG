@@ -4,7 +4,7 @@ import numpy as np
 import configparser
 import asyncio
 
-from typing import Any, List, Union, final
+from typing import Any, List, Union, final, Optional
 
 from ..base import (
     BaseGraphStorage,
@@ -95,19 +95,19 @@ class MongoKVStorage(BaseKVStorage):
             self.db = None
             self._data = None
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         return await self._data.find_one({"_id": id})
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         cursor = self._data.find({"_id": {"$in": ids}})
         return await cursor.to_list()
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         cursor = self._data.find({"_id": {"$in": list(keys)}}, {"_id": 1})
         existing_ids = {str(x["_id"]) async for x in cursor}
         return keys - existing_ids
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -133,7 +133,7 @@ class MongoKVStorage(BaseKVStorage):
                 )
             await asyncio.gather(*update_tasks)
 
-    async def get_by_mode_and_id(self, mode: str, id: str) -> Union[dict, None]:
+    async def get_by_mode_and_id(self, mode: str, id: str, workspace: str) -> Union[dict, None]:
         if is_namespace(self.namespace, NameSpace.KV_STORE_LLM_RESPONSE_CACHE):
             res = {}
             v = await self._data.find_one({"_id": mode + "_" + id})
@@ -232,19 +232,19 @@ class MongoDocStatusStorage(DocStatusStorage):
             self.db = None
             self._data = None
 
-    async def get_by_id(self, id: str) -> Union[dict[str, Any], None]:
+    async def get_by_id(self, id: str, workspace: str) -> Union[dict[str, Any], None]:
         return await self._data.find_one({"_id": id})
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         cursor = self._data.find({"_id": {"$in": ids}})
         return await cursor.to_list()
 
-    async def filter_keys(self, data: set[str]) -> set[str]:
+    async def filter_keys(self, data: set[str], workspace: str) -> set[str]:
         cursor = self._data.find({"_id": {"$in": list(data)}}, {"_id": 1})
         existing_ids = {str(x["_id"]) async for x in cursor}
         return data - existing_ids
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -256,7 +256,7 @@ class MongoDocStatusStorage(DocStatusStorage):
             )
         await asyncio.gather(*update_tasks)
 
-    async def get_status_counts(self) -> dict[str, int]:
+    async def get_status_counts(self, workspace: str) -> dict[str, int]:
         """Get counts of documents in each status"""
         pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
         cursor = self._data.aggregate(pipeline)
@@ -267,7 +267,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         return counts
 
     async def get_docs_by_status(
-        self, status: DocStatus
+        self, status: DocStatus, workspace: str = "default"
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific status"""
         cursor = self._data.find({"status": status.value})
@@ -458,7 +458,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         """
         Returns the total number of edges connected to node_id (both inbound and outbound).
         The easiest approach is typically two queries:
@@ -507,7 +507,7 @@ class MongoGraphStorage(BaseGraphStorage):
 
         return outbound_count + inbound_count
 
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         """
         If your graph can hold multiple edges from the same src to the same tgt
         (e.g. different 'relation' values), you can sum them. If it's always
@@ -547,14 +547,14 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         """
         Return the full node document (including "edges"), or None if missing.
         """
         return await self.collection.find_one({"_id": node_id})
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         pipeline = [
             {"$match": {"_id": source_node_id}},
@@ -581,7 +581,7 @@ class MongoGraphStorage(BaseGraphStorage):
                 return e
         return None
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         """
         Return a list of (source_id, target_id) for direct edges from source_node_id.
         Demonstrates $graphLookup at maxDepth=0, though direct doc retrieval is simpler.
@@ -1008,7 +1008,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
         except PyMongoError as _:
             logger.debug("vector index already exist")
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -1042,7 +1042,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
         return list_data
 
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         """Queries the vector database using Atlas Vector Search."""
         # Generate the embedding
@@ -1101,7 +1101,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
                 f"Error while deleting vectors from {self.namespace}: {str(e)}"
             )
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """Delete an entity by its name
 
         Args:
@@ -1176,7 +1176,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error searching by prefix in {self.namespace}: {str(e)}")
             return []
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -1199,7 +1199,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for ID {id}: {e}")
             return None
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:

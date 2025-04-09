@@ -4,7 +4,7 @@ import json
 import os
 import pipmaster as pm
 from dataclasses import dataclass
-from typing import Any, Dict, List, final
+from typing import Any, Dict, List, final, Optional
 
 import numpy as np
 
@@ -201,7 +201,7 @@ class GremlinStorage(BaseGraphStorage):
 
         return result[0]["has_edge"]
 
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         entity_name = GremlinStorage._fix_name(node_id)
         query = f"""g
                  .V().has('graph', {self.graph_name})
@@ -222,7 +222,7 @@ class GremlinStorage(BaseGraphStorage):
             )
             return node_dict
 
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         entity_name = GremlinStorage._fix_name(node_id)
         query = f"""g
                  .V().has('graph', {self.graph_name})
@@ -245,7 +245,7 @@ class GremlinStorage(BaseGraphStorage):
 
         return edge_count
 
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         src_degree = await self.node_degree(src_id)
         trg_degree = await self.node_degree(tgt_id)
 
@@ -262,7 +262,7 @@ class GremlinStorage(BaseGraphStorage):
         return degrees
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         entity_name_source = GremlinStorage._fix_name(source_node_id)
         entity_name_target = GremlinStorage._fix_name(target_node_id)
@@ -287,7 +287,7 @@ class GremlinStorage(BaseGraphStorage):
             )
             return edge_properties
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         node_name = GremlinStorage._fix_name(source_node_id)
         query = f"""g
                  .E()

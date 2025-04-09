@@ -1,7 +1,7 @@
 import asyncio
 import os
 from dataclasses import dataclass, field
-from typing import Any, Union, final
+from typing import Any, Union, final, Optional
 
 import numpy as np
 
@@ -183,7 +183,7 @@ class TiDBKVStorage(BaseKVStorage):
         async with self._storage_lock:
             return dict(self._data)
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str , workspace: str) -> dict[str, Any] | None:
         """Fetch doc_full data by id."""
         SQL = SQL_TEMPLATES["get_by_id_" + self.namespace]
         params = {"id": id}
@@ -191,14 +191,14 @@ class TiDBKVStorage(BaseKVStorage):
         return response if response else None
 
     # Query by id
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Fetch doc_chunks data by id"""
         SQL = SQL_TEMPLATES["get_by_ids_" + self.namespace].format(
             ids=",".join([f"'{id}'" for id in ids])
         )
         return await self.db.query(SQL, multirows=True)
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         SQL = SQL_TEMPLATES["filter_keys"].format(
             table_name=namespace_to_table_name(self.namespace),
             id_field=namespace_to_id(self.namespace),
@@ -218,7 +218,7 @@ class TiDBKVStorage(BaseKVStorage):
         return data
 
     ################ INSERT full_doc AND chunks ################
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -387,7 +387,7 @@ class TiDBVectorDBStorage(BaseVectorStorage):
             self.db = None
 
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         """Search from tidb vector"""
         embeddings = await self.embedding_func([query])
@@ -410,7 +410,7 @@ class TiDBVectorDBStorage(BaseVectorStorage):
         return results
 
     ###### INSERT entities And relationships ######
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -513,7 +513,7 @@ class TiDBVectorDBStorage(BaseVectorStorage):
         except Exception as e:
             logger.error(f"Error while deleting vectors from {self.namespace}: {e}")
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """Delete an entity by its name from the vector storage.
 
         Args:
@@ -620,7 +620,7 @@ class TiDBVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error searching records with prefix '{prefix}': {e}")
             return []
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -665,7 +665,7 @@ class TiDBVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for ID {id}: {e}")
             return None
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:
@@ -825,23 +825,23 @@ class TiDBGraphStorage(BaseGraphStorage):
         has = await self.db.query(sql, param)
         return has["cnt"] != 0
 
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         sql = SQL_TEMPLATES["node_degree"]
         param = {"name": node_id, "workspace": self.db.workspace}
         result = await self.db.query(sql, param)
         return result["cnt"]
 
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         degree = await self.node_degree(src_id) + await self.node_degree(tgt_id)
         return degree
 
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         sql = SQL_TEMPLATES["get_node"]
         param = {"name": node_id, "workspace": self.db.workspace}
         return await self.db.query(sql, param)
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         sql = SQL_TEMPLATES["get_edge"]
         param = {
@@ -851,7 +851,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         }
         return await self.db.query(sql, param)
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         sql = SQL_TEMPLATES["get_node_edges"]
         param = {"source_name": source_node_id, "workspace": self.db.workspace}
         res = await self.db.query(sql, param, multirows=True)

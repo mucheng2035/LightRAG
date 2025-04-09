@@ -78,7 +78,7 @@ class RedisKVStorage(BaseKVStorage):
         """Ensure Redis resources are cleaned up when exiting context."""
         await self.close()
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         async with self._get_redis_connection() as redis:
             try:
                 data = await redis.get(f"{self.namespace}:{id}")
@@ -87,7 +87,7 @@ class RedisKVStorage(BaseKVStorage):
                 logger.error(f"JSON decode error for id {id}: {e}")
                 return None
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         async with self._get_redis_connection() as redis:
             try:
                 pipe = redis.pipeline()
@@ -99,7 +99,7 @@ class RedisKVStorage(BaseKVStorage):
                 logger.error(f"JSON decode error in batch get: {e}")
                 return [None] * len(ids)
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         async with self._get_redis_connection() as redis:
             pipe = redis.pipeline()
             for key in keys:
@@ -109,7 +109,7 @@ class RedisKVStorage(BaseKVStorage):
             existing_ids = {keys[i] for i, exists in enumerate(results) if exists}
             return set(keys) - existing_ids
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         if not data:
             return
 

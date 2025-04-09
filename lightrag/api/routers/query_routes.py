@@ -17,6 +17,18 @@ router = APIRouter(tags=["query"])
 
 
 class QueryRequest(BaseModel):
+    database_name: str = Field(
+        min_length=1,
+        description="图谱库名",
+        default=None,
+    )
+
+    workspace: str = Field(
+        min_length=1,
+        description="隔离空间",
+        default="default",
+    )
+
     query: str = Field(
         min_length=1,
         description="The query text",

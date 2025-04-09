@@ -398,7 +398,7 @@ class AGEStorage(BaseGraphStorage):
         )
         return single_result["edge_exists"]
 
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         entity_name_label = node_id.strip('"')
         query = """
                 MATCH (n:`{label}`) RETURN n
@@ -417,7 +417,7 @@ class AGEStorage(BaseGraphStorage):
             return node_dict
         return None
 
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         entity_name_label = node_id.strip('"')
 
         query = """
@@ -436,7 +436,7 @@ class AGEStorage(BaseGraphStorage):
             )
             return edge_count
 
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         entity_name_label_source = src_id.strip('"')
         entity_name_label_target = tgt_id.strip('"')
         src_degree = await self.node_degree(entity_name_label_source)
@@ -455,7 +455,7 @@ class AGEStorage(BaseGraphStorage):
         return degrees
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         entity_name_label_source = source_node_id.strip('"')
         entity_name_label_target = target_node_id.strip('"')
@@ -480,7 +480,7 @@ class AGEStorage(BaseGraphStorage):
             )
             return result
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         """
         Retrieves all edges (relationships) for a particular node identified by its label.
         :return: List of dictionaries containing edge information

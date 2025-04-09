@@ -51,12 +51,12 @@ class JsonDocStatusStorage(DocStatusStorage):
                         f"Process {os.getpid()} doc status load {self.namespace} with {len(loaded_data)} records"
                     )
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         """Return keys that should be processed (not in storage or not successfully processed)"""
         async with self._storage_lock:
             return set(keys) - set(self._data.keys())
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         async with self._storage_lock:
             for id in ids:
@@ -74,7 +74,7 @@ class JsonDocStatusStorage(DocStatusStorage):
         return counts
 
     async def get_docs_by_status(
-        self, status: DocStatus
+        self, status: DocStatus, workspace: str = "default"
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific status"""
         result = {}
@@ -108,7 +108,7 @@ class JsonDocStatusStorage(DocStatusStorage):
                 write_json(data_dict, self._file_name)
                 await clear_all_update_flags(self.namespace)
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """
         Importance notes for in-memory storage:
         1. Changes will be persisted to disk during the next index_done_callback
@@ -123,7 +123,7 @@ class JsonDocStatusStorage(DocStatusStorage):
 
         await self.index_done_callback()
 
-    async def get_by_id(self, id: str) -> Union[dict[str, Any], None]:
+    async def get_by_id(self, id: str, workspace: str) -> Union[dict[str, Any], None]:
         async with self._storage_lock:
             return self._data.get(id)
 

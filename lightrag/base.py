@@ -11,6 +11,7 @@ from typing import (
     TypedDict,
     TypeVar,
     Callable,
+    Optional,
 )
 import numpy as np
 from .utils import EmbeddingFunc
@@ -35,6 +36,11 @@ T = TypeVar("T")
 @dataclass
 class QueryParam:
     """Configuration parameters for query execution in LightRAG."""
+    workspace: str =  "default"
+    """ document work dir"""
+
+    database_name: str = None
+    """neo4j database"""
 
     mode: Literal["local", "global", "hybrid", "naive", "mix"] = "global"
     """Specifies the retrieval mode:
@@ -147,12 +153,12 @@ class BaseVectorStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         """Query the vector storage and retrieve top_k results."""
 
     @abstractmethod
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """Insert or update vectors in the storage.
 
         Importance notes for in-memory storage:
@@ -162,7 +168,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """Delete a single entity by its name.
 
         Importance notes for in-memory storage:
@@ -172,7 +178,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
-    async def delete_entity_relation(self, entity_name: str) -> None:
+    async def delete_entity_relation(self, entity_name: str, workspace: str) -> None:
         """Delete relations for a given entity.
 
         Importance notes for in-memory storage:
@@ -182,7 +188,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -194,7 +200,7 @@ class BaseVectorStorage(StorageNameSpace, ABC):
         pass
 
     @abstractmethod
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:
@@ -224,19 +230,19 @@ class BaseKVStorage(StorageNameSpace, ABC):
     embedding_func: EmbeddingFunc
 
     @abstractmethod
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get value by id"""
 
     @abstractmethod
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get values by ids"""
 
     @abstractmethod
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         """Return un-exist keys"""
 
     @abstractmethod
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """Upsert data
 
         Importance notes for in-memory storage:
@@ -288,25 +294,25 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         """Get the degree of a node."""
 
     @abstractmethod
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         """Get the degree of an edge."""
 
     @abstractmethod
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         """Get a node by its id."""
 
     @abstractmethod
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties"""
 
     @abstractmethod
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         """Get edge properties between two nodes"""
 
     @abstractmethod
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         """Upsert a node into the graph."""
 
     @abstractmethod
@@ -397,12 +403,12 @@ class DocStatusStorage(BaseKVStorage, ABC):
     """Base class for document status storage"""
 
     @abstractmethod
-    async def get_status_counts(self) -> dict[str, int]:
+    async def get_status_counts(self, workspace: str = "default") -> dict[str, int]:
         """Get counts of documents in each status"""
 
     @abstractmethod
     async def get_docs_by_status(
-        self, status: DocStatus
+        self, status: DocStatus, workspace: str = "default"
     ) -> dict[str, DocProcessingStatus]:
         """Get all documents with a specific status"""
 

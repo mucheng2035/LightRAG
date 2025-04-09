@@ -11,7 +11,7 @@ import pipmaster as pm
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Literal
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, Query, Form
 from pydantic import BaseModel, Field, field_validator
 
 from lightrag import LightRAG
@@ -393,12 +393,13 @@ class DocumentManager:
         return any(filename.lower().endswith(ext) for ext in self.supported_extensions)
 
 
-async def pipeline_enqueue_file(rag: LightRAG, file_path: Path) -> bool:
+async def pipeline_enqueue_file(rag: LightRAG, file_path: Path, workspace: str = "default") -> bool:
     """Add a file to the queue for processing
 
     Args:
         rag: LightRAG instance
         file_path: Path to the saved file
+        workspace: workspace for the document
     Returns:
         bool: True if the file was successfully enqueued, False otherwise
     """
@@ -565,8 +566,8 @@ async def pipeline_enqueue_file(rag: LightRAG, file_path: Path) -> bool:
 
         # Insert into the RAG queue
         if content:
-            await rag.apipeline_enqueue_documents(content, file_paths=file_path.name)
-            logger.info(f"Successfully fetched and enqueued file: {file_path.name}")
+            await rag.apipeline_enqueue_documents(content, file_paths=file_path.name, workspace=workspace)
+            logger.info(f"Successfully fetched and enqueued file: {file_path.name} into:{workspace}")
             return True
         else:
             logger.error(f"No content could be extracted from file: {file_path.name}")
@@ -583,16 +584,18 @@ async def pipeline_enqueue_file(rag: LightRAG, file_path: Path) -> bool:
     return False
 
 
-async def pipeline_index_file(rag: LightRAG, file_path: Path):
+async def pipeline_index_file(rag: LightRAG, file_path: Path, workspace: str):
     """Index a file
 
     Args:
         rag: LightRAG instance
         file_path: Path to the saved file
+        workspace: workspace for the document
     """
     try:
-        if await pipeline_enqueue_file(rag, file_path):
-            await rag.apipeline_process_enqueue_documents()
+        if await pipeline_enqueue_file(rag, file_path, workspace):
+            logger.debug(f"apipeline_process_enqueue_documents {workspace} start")
+            await rag.apipeline_process_enqueue_documents(workspace = workspace)
 
     except Exception as e:
         logger.error(f"Error indexing file {file_path.name}: {str(e)}")
@@ -729,7 +732,8 @@ def create_document_routes(
         "/upload", response_model=InsertResponse, dependencies=[Depends(combined_auth)]
     )
     async def upload_to_input_dir(
-        background_tasks: BackgroundTasks, file: UploadFile = File(...)
+        background_tasks: BackgroundTasks, file: UploadFile = File(...),
+        workspace: str = Query(default="default", description="工作空间")
     ):
         """
         Upload a file to the input directory and index it.
@@ -741,6 +745,7 @@ def create_document_routes(
         Args:
             background_tasks: FastAPI BackgroundTasks for async processing
             file (UploadFile): The file to be uploaded. It must have an allowed extension.
+            workspace (str): The workspace identifier.
 
         Returns:
             InsertResponse: A response object containing the upload status and a message.
@@ -756,19 +761,24 @@ def create_document_routes(
                     detail=f"Unsupported file type. Supported types: {doc_manager.supported_extensions}",
                 )
 
-            file_path = doc_manager.input_dir / file.filename
+            logger.info(f"workspace:{workspace}")
+            # Create a workspace-specific directory
+            workspace_dir = doc_manager.input_dir / workspace
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = workspace_dir / file.filename
             # Check if file already exists
             if file_path.exists():
                 return InsertResponse(
                     status="duplicated",
                     message=f"File '{file.filename}' already exists in the input directory.",
                 )
-
+            logger.debug(f"Indexing {file_path}")
             with open(file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
             # Add to background tasks
-            background_tasks.add_task(pipeline_index_file, rag, file_path)
+            background_tasks.add_task(pipeline_index_file, rag, file_path, workspace)
 
             return InsertResponse(
                 status="success",

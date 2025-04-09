@@ -2,7 +2,7 @@ import inspect
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, final
+from typing import Any, final, Optional
 import numpy as np
 import configparser
 
@@ -266,11 +266,12 @@ class Neo4JStorage(BaseGraphStorage):
                 await result.consume()  # Ensure results are consumed even on error
                 raise
 
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties
 
         Args:
             node_id: The node label to look up
+            database_name: Optional name of the database to use (defaults to self._DATABASE)
 
         Returns:
             dict: Node properties if found
@@ -280,8 +281,9 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If node_id is invalid
             Exception: If there is an error executing the query
         """
+        database = database_name if database_name is not None else self._DATABASE
         async with self._driver.session(
-            database=self._DATABASE, default_access_mode="READ"
+            database=database, default_access_mode="READ"
         ) as session:
             try:
                 query = "MATCH (n:base {entity_id: $entity_id}) RETURN n"
@@ -314,13 +316,14 @@ class Neo4JStorage(BaseGraphStorage):
                 logger.error(f"Error getting node for {node_id}: {str(e)}")
                 raise
 
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         """Get the degree (number of relationships) of a node with the given label.
         If multiple nodes have the same label, returns the degree of the first node.
         If no node is found, returns 0.
 
         Args:
             node_id: The label of the node
+            database_name: Optional name of the database to use (defaults to self._DATABASE)
 
         Returns:
             int: The number of relationships the node has, or 0 if no node found
@@ -329,8 +332,9 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If node_id is invalid
             Exception: If there is an error executing the query
         """
+        database = database_name if database_name is not None else self._DATABASE
         async with self._driver.session(
-            database=self._DATABASE, default_access_mode="READ"
+            database=database, default_access_mode="READ"
         ) as session:
             try:
                 query = """
@@ -357,18 +361,19 @@ class Neo4JStorage(BaseGraphStorage):
                 logger.error(f"Error getting node degree for {node_id}: {str(e)}")
                 raise
 
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         """Get the total degree (sum of relationships) of two nodes.
 
         Args:
             src_id: Label of the source node
             tgt_id: Label of the target node
+            database_name: Optional name of the database to use (defaults to self._DATABASE)
 
         Returns:
             int: Sum of the degrees of both nodes
         """
-        src_degree = await self.node_degree(src_id)
-        trg_degree = await self.node_degree(tgt_id)
+        src_degree = await self.node_degree(src_id, database_name)
+        trg_degree = await self.node_degree(tgt_id, database_name)
 
         # Convert None to 0 for addition
         src_degree = 0 if src_degree is None else src_degree
@@ -378,14 +383,14 @@ class Neo4JStorage(BaseGraphStorage):
         return degrees
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         """Get edge properties between two nodes.
 
         Args:
             source_node_id: Label of the source node
             target_node_id: Label of the target node
-
+            database_name: Optional name of the database to use (defaults to self._DATABASE)
         Returns:
             dict: Edge properties if found, default properties if not found or on error
 
@@ -394,8 +399,9 @@ class Neo4JStorage(BaseGraphStorage):
             Exception: If there is an error executing the query
         """
         try:
+            database = database_name if database_name is not None else self._DATABASE
             async with self._driver.session(
-                database=self._DATABASE, default_access_mode="READ"
+                database=database, default_access_mode="READ"
             ) as session:
                 query = """
                 MATCH (start:base {entity_id: $source_entity_id})-[r]-(end:base {entity_id: $target_entity_id})
@@ -463,12 +469,12 @@ class Neo4JStorage(BaseGraphStorage):
             )
             raise
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         """Retrieves all edges (relationships) for a particular node identified by its label.
 
         Args:
             source_node_id: Label of the node to get edges for
-
+            database_name: Optional name of the database to use (defaults to self._DATABASE)
         Returns:
             list[tuple[str, str]]: List of (source_label, target_label) tuples representing edges
             None: If no edges found
@@ -478,8 +484,9 @@ class Neo4JStorage(BaseGraphStorage):
             Exception: If there is an error executing the query
         """
         try:
+            database = database_name if database_name is not None else self._DATABASE
             async with self._driver.session(
-                database=self._DATABASE, default_access_mode="READ"
+                database=database, default_access_mode="READ"
             ) as session:
                 try:
                     query = """MATCH (n:base {entity_id: $entity_id})

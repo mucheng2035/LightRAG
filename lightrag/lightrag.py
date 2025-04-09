@@ -4,6 +4,7 @@ import asyncio
 import configparser
 import os
 import csv
+import time
 import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -655,6 +656,7 @@ class LightRAG:
         input: str | list[str],
         ids: list[str] | None = None,
         file_paths: str | list[str] | None = None,
+        workspace: str = "default",
     ) -> None:
         """
         Pipeline for Processing Documents
@@ -669,6 +671,7 @@ class LightRAG:
             input: Single document string or list of document strings
             ids: list of unique document IDs, if not provided, MD5 hash IDs will be generated
             file_paths: list of file paths corresponding to each document, used for citation
+            workspace: workspace for document
         """
         if isinstance(input, str):
             input = [input]
@@ -688,7 +691,7 @@ class LightRAG:
         else:
             # If no file paths provided, use placeholder
             file_paths = ["unknown_source"] * len(input)
-
+        logger.debug(f"input:{input}, ids:{ids}, file_paths:{file_paths}")
         # 1. Validate ids if provided or generate MD5 hash IDs
         if ids is not None:
             # Check if the number of IDs matches the number of documents
@@ -759,7 +762,7 @@ class LightRAG:
         # Get docs ids
         all_new_doc_ids = set(new_docs.keys())
         # Exclude IDs of documents that are already in progress
-        unique_new_doc_ids = await self.doc_status.filter_keys(all_new_doc_ids)
+        unique_new_doc_ids = await self.doc_status.filter_keys(all_new_doc_ids, workspace)
 
         # Log ignored document IDs
         ignored_ids = [
@@ -784,18 +787,23 @@ class LightRAG:
             return
 
         # 5. Store status document
-        await self.doc_status.upsert(new_docs)
-        logger.info(f"Stored {len(new_docs)} new unique documents")
+        await self.doc_status.upsert(new_docs, workspace)
+        logger.info(f"Stored {len(new_docs)} new unique documents into {workspace}")
 
     async def apipeline_process_enqueue_documents(
         self,
         split_by_character: str | None = None,
         split_by_character_only: bool = False,
+        workspace: str = "default",
     ) -> None:
         """
         Process pending documents by splitting them into chunks, processing
         each chunk for entity and relation extraction, and updating the
         document status.
+        Args:
+            split_by_character (str | None): Character to split the document on. If None, the document is split into chunks of `chunk_token_size` tokens.
+            split_by_character_only (bool): If True, the document is split only on the specified character.
+            workspace (str): Workspace for document processing. Defaults to "default".
 
         1. Get all pending, failed, and abnormally terminated processing documents.
         2. Split document content into chunks
@@ -816,9 +824,9 @@ class LightRAG:
             # Ensure only one worker is processing documents
             if not pipeline_status.get("busy", False):
                 processing_docs, failed_docs, pending_docs = await asyncio.gather(
-                    self.doc_status.get_docs_by_status(DocStatus.PROCESSING),
-                    self.doc_status.get_docs_by_status(DocStatus.FAILED),
-                    self.doc_status.get_docs_by_status(DocStatus.PENDING),
+                    self.doc_status.get_docs_by_status(DocStatus.PROCESSING, workspace),
+                    self.doc_status.get_docs_by_status(DocStatus.FAILED, workspace),
+                    self.doc_status.get_docs_by_status(DocStatus.PENDING, workspace),
                 )
 
                 to_process_docs: dict[str, DocProcessingStatus] = {}
@@ -894,12 +902,12 @@ class LightRAG:
                     split_by_character_only: bool,
                     pipeline_status: dict,
                     pipeline_status_lock: asyncio.Lock,
+                    workspace: str,
                 ) -> None:
                     """Process single document"""
                     try:
                         # Get file path from status document
                         file_path = getattr(status_doc, "file_path", "unknown_source")
-
                         # Generate chunks from document
                         chunks: dict[str, Any] = {
                             compute_mdhash_id(dp["content"], prefix="chunk-"): {
@@ -919,6 +927,9 @@ class LightRAG:
 
                         # Process document (text chunks and full docs) in parallel
                         # Create tasks with references for potential cancellation
+                        # todo 增加起始日志打印
+                        timestamp_start = datetime.now().timestamp()
+                        logger.info(f"Process task at:{timestamp_start}")
                         doc_status_task = asyncio.create_task(
                             self.doc_status.upsert(
                                 {
@@ -932,24 +943,29 @@ class LightRAG:
                                         "updated_at": datetime.now().isoformat(),
                                         "file_path": file_path,
                                     }
-                                }
+                                },
+                                workspace=workspace,
                             )
                         )
+                        # 实体
                         chunks_vdb_task = asyncio.create_task(
-                            self.chunks_vdb.upsert(chunks)
+                            self.chunks_vdb.upsert(chunks, workspace)
                         )
+                        # 关系
                         entity_relation_task = asyncio.create_task(
                             self._process_entity_relation_graph(
-                                chunks, pipeline_status, pipeline_status_lock
+                                chunks, pipeline_status, pipeline_status_lock, workspace
                             )
                         )
+                        # 更新文档内容
                         full_docs_task = asyncio.create_task(
                             self.full_docs.upsert(
-                                {doc_id: {"content": status_doc.content}}
+                                {doc_id: {"content": status_doc.content}}, workspace
                             )
                         )
+                        # 本地缓存
                         text_chunks_task = asyncio.create_task(
-                            self.text_chunks.upsert(chunks)
+                            self.text_chunks.upsert(chunks, workspace)
                         )
                         tasks = [
                             doc_status_task,
@@ -971,8 +987,11 @@ class LightRAG:
                                     "updated_at": datetime.now().isoformat(),
                                     "file_path": file_path,
                                 }
-                            }
+                            },
+                            workspace
                         )
+                        timestamp_end = datetime.now().timestamp()
+                        logger.info(f"Processed task at:{timestamp_end- timestamp_start}")
                     except Exception as e:
                         # Log error and update pipeline status
                         error_msg = f"Failed to process document {doc_id}: {str(e)}"
@@ -1003,7 +1022,8 @@ class LightRAG:
                                     "updated_at": datetime.now().isoformat(),
                                     "file_path": file_path,
                                 }
-                            }
+                            },
+                            workspace
                         )
 
                 # 3. iterate over batches
@@ -1028,6 +1048,7 @@ class LightRAG:
                                 split_by_character_only,
                                 pipeline_status,
                                 pipeline_status_lock,
+                                workspace,
                             )
                         )
 
@@ -1058,9 +1079,9 @@ class LightRAG:
 
                 # Check for pending documents again
                 processing_docs, failed_docs, pending_docs = await asyncio.gather(
-                    self.doc_status.get_docs_by_status(DocStatus.PROCESSING),
-                    self.doc_status.get_docs_by_status(DocStatus.FAILED),
-                    self.doc_status.get_docs_by_status(DocStatus.PENDING),
+                    self.doc_status.get_docs_by_status(DocStatus.PROCESSING, workspace),
+                    self.doc_status.get_docs_by_status(DocStatus.FAILED, workspace),
+                    self.doc_status.get_docs_by_status(DocStatus.PENDING, workspace),
                 )
 
                 to_process_docs = {}
@@ -1076,9 +1097,10 @@ class LightRAG:
                 pipeline_status["busy"] = False
                 pipeline_status["latest_message"] = log_message
                 pipeline_status["history_messages"].append(log_message)
+    # apipeline_process_enqueue_documents end
 
     async def _process_entity_relation_graph(
-        self, chunk: dict[str, Any], pipeline_status=None, pipeline_status_lock=None
+        self, chunk: dict[str, Any], pipeline_status=None, pipeline_status_lock=None, workspace: str = "default"
     ) -> None:
         try:
             await extract_entities(
@@ -1090,9 +1112,10 @@ class LightRAG:
                 pipeline_status=pipeline_status,
                 pipeline_status_lock=pipeline_status_lock,
                 llm_response_cache=self.llm_response_cache,
+                workspace=workspace
             )
         except Exception as e:
-            logger.error("Failed to extract entities and relationships")
+            logger.error("Failed to extract entities and relationships %s", e)
             raise e
 
     async def _insert_done(

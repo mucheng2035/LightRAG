@@ -3,7 +3,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Union, final
+from typing import Any, Union, final, Optional
 import numpy as np
 import configparser
 
@@ -283,10 +283,10 @@ class PGKVStorage(BaseKVStorage):
 
     ################ QUERY METHODS ################
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get doc_full data by id."""
         sql = SQL_TEMPLATES["get_by_id_" + self.namespace]
-        params = {"workspace": self.db.workspace, "id": id}
+        params = {"workspace": workspace if workspace else self.db.workspace, "id": id}
         if is_namespace(self.namespace, NameSpace.KV_STORE_LLM_RESPONSE_CACHE):
             array_res = await self.db.query(sql, params, multirows=True)
             res = {}
@@ -297,10 +297,11 @@ class PGKVStorage(BaseKVStorage):
             response = await self.db.query(sql, params)
             return response if response else None
 
-    async def get_by_mode_and_id(self, mode: str, id: str) -> Union[dict, None]:
+    async def get_by_mode_and_id(self, mode: str, id: str, workspace: str = "default") -> Union[dict, None]:
         """Specifically for llm_response_cache."""
         sql = SQL_TEMPLATES["get_by_mode_id_" + self.namespace]
-        params = {"workspace": self.db.workspace, mode: mode, "id": id}
+        params = {"workspace": workspace if workspace else self.db.workspace, mode: mode, "id": id}
+        logger.debug(f"get_by_mode_and_id:{sql}, params:{params}")
         if is_namespace(self.namespace, NameSpace.KV_STORE_LLM_RESPONSE_CACHE):
             array_res = await self.db.query(sql, params, multirows=True)
             res = {}
@@ -311,12 +312,12 @@ class PGKVStorage(BaseKVStorage):
             return None
 
     # Query by id
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get doc_chunks data by id"""
         sql = SQL_TEMPLATES["get_by_ids_" + self.namespace].format(
             ids=",".join([f"'{id}'" for id in ids])
         )
-        params = {"workspace": self.db.workspace}
+        params = {"workspace": workspace if workspace else self.db.workspace}
         if is_namespace(self.namespace, NameSpace.KV_STORE_LLM_RESPONSE_CACHE):
             array_res = await self.db.query(sql, params, multirows=True)
             modes = set()
@@ -338,13 +339,13 @@ class PGKVStorage(BaseKVStorage):
         params = {"workspace": self.db.workspace, "status": status}
         return await self.db.query(SQL, params, multirows=True)
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         """Filter out duplicated content"""
         sql = SQL_TEMPLATES["filter_keys"].format(
             table_name=namespace_to_table_name(self.namespace),
             ids=",".join([f"'{id}'" for id in keys]),
         )
-        params = {"workspace": self.db.workspace}
+        params = {"workspace":  workspace if  workspace else self.db.workspace}
         try:
             res = await self.db.query(sql, params, multirows=True)
             if res:
@@ -360,7 +361,7 @@ class PGKVStorage(BaseKVStorage):
             raise
 
     ################ INSERT METHODS ################
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
@@ -373,21 +374,22 @@ class PGKVStorage(BaseKVStorage):
                 _data = {
                     "id": k,
                     "content": v["content"],
-                    "workspace": self.db.workspace,
+                    "workspace": workspace if workspace else self.db.workspace,
                 }
+                logger.debug(f"Sql:{upsert_sql}, params:{_data}")
                 await self.db.execute(upsert_sql, _data)
         elif is_namespace(self.namespace, NameSpace.KV_STORE_LLM_RESPONSE_CACHE):
             for mode, items in data.items():
                 for k, v in items.items():
                     upsert_sql = SQL_TEMPLATES["upsert_llm_response_cache"]
                     _data = {
-                        "workspace": self.db.workspace,
+                        "workspace": workspace if workspace else self.db.workspace,
                         "id": k,
                         "original_prompt": v["original_prompt"],
                         "return_value": v["return"],
                         "mode": mode,
                     }
-
+                    logger.debug(f"Sql:{upsert_sql}, params:{_data}")
                     await self.db.execute(upsert_sql, _data)
 
     async def index_done_callback(self) -> None:
@@ -499,11 +501,11 @@ class PGVectorStorage(BaseVectorStorage):
             await ClientManager.release_client(self.db)
             self.db = None
 
-    def _upsert_chunks(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def _upsert_chunks(self, item: dict[str, Any], workspace: str) -> tuple[str, dict[str, Any]]:
         try:
             upsert_sql = SQL_TEMPLATES["upsert_chunk"]
             data: dict[str, Any] = {
-                "workspace": self.db.workspace,
+                "workspace": workspace if workspace else self.db.workspace,
                 "id": item["__id__"],
                 "tokens": item["tokens"],
                 "chunk_order_index": item["chunk_order_index"],
@@ -518,7 +520,7 @@ class PGVectorStorage(BaseVectorStorage):
 
         return upsert_sql, data
 
-    def _upsert_entities(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def _upsert_entities(self, item: dict[str, Any], workspace: str) -> tuple[str, dict[str, Any]]:
         upsert_sql = SQL_TEMPLATES["upsert_entity"]
         source_id = item["source_id"]
         if isinstance(source_id, str) and "<SEP>" in source_id:
@@ -527,7 +529,7 @@ class PGVectorStorage(BaseVectorStorage):
             chunk_ids = [source_id]
 
         data: dict[str, Any] = {
-            "workspace": self.db.workspace,
+            "workspace": workspace if workspace else self.db.workspace,
             "id": item["__id__"],
             "entity_name": item["entity_name"],
             "content": item["content"],
@@ -538,7 +540,7 @@ class PGVectorStorage(BaseVectorStorage):
         }
         return upsert_sql, data
 
-    def _upsert_relationships(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def _upsert_relationships(self, item: dict[str, Any], workspace: str) -> tuple[str, dict[str, Any]]:
         upsert_sql = SQL_TEMPLATES["upsert_relationship"]
         source_id = item["source_id"]
         if isinstance(source_id, str) and "<SEP>" in source_id:
@@ -547,7 +549,7 @@ class PGVectorStorage(BaseVectorStorage):
             chunk_ids = [source_id]
 
         data: dict[str, Any] = {
-            "workspace": self.db.workspace,
+            "workspace": workspace if workspace else self.db.workspace,
             "id": item["__id__"],
             "source_id": item["src_id"],
             "target_id": item["tgt_id"],
@@ -559,8 +561,8 @@ class PGVectorStorage(BaseVectorStorage):
         }
         return upsert_sql, data
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
-        logger.info(f"Inserting {len(data)} to {self.namespace}")
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
+        logger.info(f"Inserting {len(data)} to {self.namespace} with:{workspace}")
         if not data:
             return
 
@@ -587,19 +589,19 @@ class PGVectorStorage(BaseVectorStorage):
             d["__vector__"] = embeddings[i]
         for item in list_data:
             if is_namespace(self.namespace, NameSpace.VECTOR_STORE_CHUNKS):
-                upsert_sql, data = self._upsert_chunks(item)
+                upsert_sql, data = self._upsert_chunks(item, workspace)
             elif is_namespace(self.namespace, NameSpace.VECTOR_STORE_ENTITIES):
-                upsert_sql, data = self._upsert_entities(item)
+                upsert_sql, data = self._upsert_entities(item, workspace)
             elif is_namespace(self.namespace, NameSpace.VECTOR_STORE_RELATIONSHIPS):
-                upsert_sql, data = self._upsert_relationships(item)
+                upsert_sql, data = self._upsert_relationships(item, workspace)
             else:
                 raise ValueError(f"{self.namespace} is not supported")
-
+            logger.debug(f"upset sql:{upsert_sql}, params:{data}")
             await self.db.execute(upsert_sql, data)
 
     #################### query method ###############
     async def query(
-        self, query: str, top_k: int, ids: list[str] | None = None
+        self, query: str, top_k: int, ids: list[str] | None = None, workspace: str = "default"
     ) -> list[dict[str, Any]]:
         embeddings = await self.embedding_func([query])
         embedding = embeddings[0]
@@ -614,7 +616,7 @@ class PGVectorStorage(BaseVectorStorage):
             embedding_string=embedding_string, doc_ids=formatted_ids
         )
         params = {
-            "workspace": self.db.workspace,
+            "workspace": workspace if workspace else self.db.workspace,
             "better_than_threshold": self.cosine_better_than_threshold,
             "top_k": top_k,
         }
@@ -651,7 +653,7 @@ class PGVectorStorage(BaseVectorStorage):
         except Exception as e:
             logger.error(f"Error while deleting vectors from {self.namespace}: {e}")
 
-    async def delete_entity(self, entity_name: str) -> None:
+    async def delete_entity(self, entity_name: str, workspace: str) -> None:
         """Delete an entity by its name from the vector storage.
 
         Args:
@@ -722,7 +724,7 @@ class PGVectorStorage(BaseVectorStorage):
             logger.error(f"Error during prefix search for '{prefix}': {e}")
             return []
 
-    async def get_by_id(self, id: str) -> dict[str, Any] | None:
+    async def get_by_id(self, id: str, workspace: str) -> dict[str, Any] | None:
         """Get vector data by its ID
 
         Args:
@@ -737,7 +739,7 @@ class PGVectorStorage(BaseVectorStorage):
             return None
 
         query = f"SELECT * FROM {table_name} WHERE workspace=$1 AND id=$2"
-        params = {"workspace": self.db.workspace, "id": id}
+        params = {"workspace": workspace if workspace else self.db.workspace, "id": id}
 
         try:
             result = await self.db.query(query, params)
@@ -748,7 +750,7 @@ class PGVectorStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for ID {id}: {e}")
             return None
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get multiple vector data by their IDs
 
         Args:
@@ -767,7 +769,7 @@ class PGVectorStorage(BaseVectorStorage):
 
         ids_str = ",".join([f"'{id}'" for id in ids])
         query = f"SELECT * FROM {table_name} WHERE workspace=$1 AND id IN ({ids_str})"
-        params = {"workspace": self.db.workspace}
+        params = {"workspace": workspace if workspace else self.db.workspace}
 
         try:
             results = await self.db.query(query, params, multirows=True)
@@ -809,13 +811,16 @@ class PGDocStatusStorage(DocStatusStorage):
             await ClientManager.release_client(self.db)
             self.db = None
 
-    async def filter_keys(self, keys: set[str]) -> set[str]:
+    async def filter_keys(self, keys: set[str], workspace: str) -> set[str]:
         """Filter out duplicated content"""
         sql = SQL_TEMPLATES["filter_keys"].format(
             table_name=namespace_to_table_name(self.namespace),
             ids=",".join([f"'{id}'" for id in keys]),
         )
-        params = {"workspace": self.db.workspace}
+
+        params = {"workspace": workspace if workspace else self.db.workspace}
+        # sql 日志打印
+        logger.debug(f"sql:{sql}, params:{params}")
         try:
             res = await self.db.query(sql, params, multirows=True)
             if res:
@@ -832,9 +837,9 @@ class PGDocStatusStorage(DocStatusStorage):
             )
             raise
 
-    async def get_by_id(self, id: str) -> Union[dict[str, Any], None]:
+    async def get_by_id(self, id: str, workspace: str) -> Union[dict[str, Any], None]:
         sql = "select * from LIGHTRAG_DOC_STATUS where workspace=$1 and id=$2"
-        params = {"workspace": self.db.workspace, "id": id}
+        params = {"workspace": workspace if workspace else self.db.workspace, "id": id}
         result = await self.db.query(sql, params, True)
         if result is None or result == []:
             return None
@@ -850,13 +855,13 @@ class PGDocStatusStorage(DocStatusStorage):
                 file_path=result[0]["file_path"],
             )
 
-    async def get_by_ids(self, ids: list[str]) -> list[dict[str, Any]]:
+    async def get_by_ids(self, ids: list[str], workspace: str) -> list[dict[str, Any]]:
         """Get doc_chunks data by multiple IDs."""
         if not ids:
             return []
 
         sql = "SELECT * FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1 AND id = ANY($2)"
-        params = {"workspace": self.db.workspace, "ids": ids}
+        params = {"workspace": workspace if workspace else self.db.workspace, "ids": ids}
 
         results = await self.db.query(sql, params, True)
 
@@ -876,24 +881,25 @@ class PGDocStatusStorage(DocStatusStorage):
             for row in results
         ]
 
-    async def get_status_counts(self) -> dict[str, int]:
+    async def get_status_counts(self, workspace: str = "default") -> dict[str, int]:
         """Get counts of documents in each status"""
         sql = """SELECT status as "status", COUNT(1) as "count"
                    FROM LIGHTRAG_DOC_STATUS
                   where workspace=$1 GROUP BY STATUS
                  """
-        result = await self.db.query(sql, {"workspace": self.db.workspace}, True)
+        result = await self.db.query(sql, {"workspace": workspace if workspace else self.db.workspace}, True)
         counts = {}
         for doc in result:
             counts[doc["status"]] = doc["count"]
         return counts
 
     async def get_docs_by_status(
-        self, status: DocStatus
+        self, status: DocStatus, workspace: str = "default"
     ) -> dict[str, DocProcessingStatus]:
         """all documents with a specific status"""
         sql = "select * from LIGHTRAG_DOC_STATUS where workspace=$1 and status=$2"
-        params = {"workspace": self.db.workspace, "status": status.value}
+        params = {"workspace": workspace if workspace else self.db.workspace, "status": status.value}
+        logger.debug(f"sql:{sql}, params:{params}")
         result = await self.db.query(sql, params, True)
         docs_by_status = {
             element["id"]: DocProcessingStatus(
@@ -943,11 +949,12 @@ class PGDocStatusStorage(DocStatusStorage):
         except Exception as e:
             logger.error(f"Error while deleting records from {self.namespace}: {e}")
 
-    async def upsert(self, data: dict[str, dict[str, Any]]) -> None:
+    async def upsert(self, data: dict[str, dict[str, Any]], workspace: str) -> None:
         """Update or insert document status
 
         Args:
             data: dictionary of document IDs and their status data
+            workspace: workspace for documents
         """
         logger.info(f"Inserting {len(data)} to {self.namespace}")
         if not data:
@@ -968,7 +975,7 @@ class PGDocStatusStorage(DocStatusStorage):
             await self.db.execute(
                 sql,
                 {
-                    "workspace": self.db.workspace,
+                    "workspace": workspace if workspace else self.db.workspace,
                     "id": k,
                     "content": v["content"],
                     "content_summary": v["content_summary"],
@@ -1216,7 +1223,7 @@ class PGGraphStorage(BaseGraphStorage):
 
         return single_result["edge_exists"]
 
-    async def get_node(self, node_id: str) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties"""
 
         label = node_id.strip('"')
@@ -1232,7 +1239,7 @@ class PGGraphStorage(BaseGraphStorage):
             return node_dict
         return None
 
-    async def node_degree(self, node_id: str) -> int:
+    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
         label = node_id.strip('"')
 
         query = """SELECT * FROM cypher('%s', $$
@@ -1244,7 +1251,7 @@ class PGGraphStorage(BaseGraphStorage):
             edge_count = int(record["total_edge_count"])
             return edge_count
 
-    async def edge_degree(self, src_id: str, tgt_id: str) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
         src_degree = await self.node_degree(src_id)
         trg_degree = await self.node_degree(tgt_id)
 
@@ -1257,7 +1264,7 @@ class PGGraphStorage(BaseGraphStorage):
         return degrees
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str
+        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
     ) -> dict[str, str] | None:
         """Get edge properties between two nodes"""
 
@@ -1279,7 +1286,7 @@ class PGGraphStorage(BaseGraphStorage):
 
             return result
 
-    async def get_node_edges(self, source_node_id: str) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
         """
         Retrieves all edges (relationships) for a particular node identified by its label.
         :return: list of dictionaries containing edge information
