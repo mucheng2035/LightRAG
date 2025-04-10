@@ -402,7 +402,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         """
         Check if node_id is present in the collection by looking up its doc.
         No real need for $graphLookup here, but let's keep it direct.
@@ -410,7 +410,7 @@ class MongoGraphStorage(BaseGraphStorage):
         doc = await self.collection.find_one({"_id": node_id}, {"_id": 1})
         return doc is not None
 
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         """
         Check if there's a direct single-hop edge from source_node_id to target_node_id.
 
@@ -615,7 +615,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         """
         Insert or update a node document. If new, create an empty edges array.
         """
@@ -625,7 +625,7 @@ class MongoGraphStorage(BaseGraphStorage):
         await self.collection.update_one({"_id": node_id}, update_doc, upsert=True)
 
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         """
         Upsert an edge from source_node_id -> target_node_id with optional 'relation'.
@@ -702,7 +702,7 @@ class MongoGraphStorage(BaseGraphStorage):
         return labels
 
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 5
+        self, node_label: str, max_depth: int = 5, database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Get complete connected subgraph for specified node (including the starting node itself)

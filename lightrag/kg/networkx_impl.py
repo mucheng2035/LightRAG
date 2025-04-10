@@ -123,11 +123,11 @@ class NetworkXStorage(BaseGraphStorage):
 
             return self._graph
 
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         graph = await self._get_graph()
         return graph.has_node(node_id)
 
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         graph = await self._get_graph()
         return graph.has_edge(source_node_id, target_node_id)
 
@@ -155,7 +155,7 @@ class NetworkXStorage(BaseGraphStorage):
             return list(graph.edges(source_node_id))
         return None
 
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         """
         Importance notes:
         1. Changes will be persisted to disk during the next index_done_callback
@@ -166,7 +166,7 @@ class NetworkXStorage(BaseGraphStorage):
         graph.add_node(node_id, **node_data)
 
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         """
         Importance notes:
@@ -260,6 +260,7 @@ class NetworkXStorage(BaseGraphStorage):
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = MAX_GRAPH_NODES,
+        database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.

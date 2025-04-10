@@ -9,7 +9,7 @@ import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from functools import partial
-from typing import Any, AsyncIterator, Callable, Iterator, cast, final, Literal
+from typing import Any, AsyncIterator, Callable, Iterator, cast, final, Literal, Optional
 import pandas as pd
 
 
@@ -512,6 +512,7 @@ class LightRAG:
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = 1000,
+        database_name: Optional[str] = None,
     ) -> KnowledgeGraph:
         """Get knowledge graph for a given label
 
@@ -525,7 +526,7 @@ class LightRAG:
         """
 
         return await self.chunk_entity_relation_graph.get_knowledge_graph(
-            node_label, max_depth, max_nodes
+            node_label, max_depth, max_nodes,database_name
         )
 
     def _get_storage_class(self, storage_name: str) -> Callable[..., Any]:
@@ -795,6 +796,7 @@ class LightRAG:
         split_by_character: str | None = None,
         split_by_character_only: bool = False,
         workspace: str = "default",
+        database_name: str = None,
     ) -> None:
         """
         Process pending documents by splitting them into chunks, processing
@@ -804,6 +806,7 @@ class LightRAG:
             split_by_character (str | None): Character to split the document on. If None, the document is split into chunks of `chunk_token_size` tokens.
             split_by_character_only (bool): If True, the document is split only on the specified character.
             workspace (str): Workspace for document processing. Defaults to "default".
+            database_name (str): database_name for neo4j.
 
         1. Get all pending, failed, and abnormally terminated processing documents.
         2. Split document content into chunks
@@ -901,8 +904,7 @@ class LightRAG:
                     split_by_character: str | None,
                     split_by_character_only: bool,
                     pipeline_status: dict,
-                    pipeline_status_lock: asyncio.Lock,
-                    workspace: str,
+                    pipeline_status_lock: asyncio.Lock
                 ) -> None:
                     """Process single document"""
                     try:
@@ -927,7 +929,6 @@ class LightRAG:
 
                         # Process document (text chunks and full docs) in parallel
                         # Create tasks with references for potential cancellation
-                        # todo 增加起始日志打印
                         timestamp_start = datetime.now().timestamp()
                         logger.info(f"Process task at:{timestamp_start}")
                         doc_status_task = asyncio.create_task(
@@ -954,7 +955,7 @@ class LightRAG:
                         # 关系
                         entity_relation_task = asyncio.create_task(
                             self._process_entity_relation_graph(
-                                chunks, pipeline_status, pipeline_status_lock, workspace
+                                chunks, pipeline_status, pipeline_status_lock, workspace, database_name
                             )
                         )
                         # 更新文档内容
@@ -1048,7 +1049,6 @@ class LightRAG:
                                 split_by_character_only,
                                 pipeline_status,
                                 pipeline_status_lock,
-                                workspace,
                             )
                         )
 
@@ -1100,7 +1100,12 @@ class LightRAG:
     # apipeline_process_enqueue_documents end
 
     async def _process_entity_relation_graph(
-        self, chunk: dict[str, Any], pipeline_status=None, pipeline_status_lock=None, workspace: str = "default"
+        self,
+        chunk: dict[str, Any],
+        pipeline_status=None,
+        pipeline_status_lock=None,
+        workspace: str = "default",
+        database_name: str = None
     ) -> None:
         try:
             await extract_entities(
@@ -1112,7 +1117,8 @@ class LightRAG:
                 pipeline_status=pipeline_status,
                 pipeline_status_lock=pipeline_status_lock,
                 llm_response_cache=self.llm_response_cache,
-                workspace=workspace
+                workspace=workspace,
+                database_name = database_name
             )
         except Exception as e:
             logger.error("Failed to extract entities and relationships %s", e)

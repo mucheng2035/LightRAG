@@ -733,7 +733,7 @@ class TiDBGraphStorage(BaseGraphStorage):
             self.db = None
 
     #################### upsert method ################
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         entity_name = node_id
         entity_type = node_data["entity_type"]
         description = node_data["description"]
@@ -763,7 +763,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         await self.db.execute(sql, data)
 
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         source_name = source_node_id
         target_name = target_node_id
@@ -809,13 +809,13 @@ class TiDBGraphStorage(BaseGraphStorage):
 
     # Query
 
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         sql = SQL_TEMPLATES["has_entity"]
         param = {"name": node_id, "workspace": self.db.workspace}
         has = await self.db.query(sql, param)
         return has["cnt"] != 0
 
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         sql = SQL_TEMPLATES["has_relationship"]
         param = {
             "source_name": source_node_id,
@@ -918,7 +918,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         return [item["label"] for item in result]
 
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 5
+        self, node_label: str, max_depth: int = 5, database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Get a connected subgraph of nodes matching the specified label

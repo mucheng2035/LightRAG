@@ -212,7 +212,7 @@ async def _merge_nodes_then_upsert(
     nodes_data: list[dict],
     knowledge_graph_inst: BaseGraphStorage,
     global_config: dict,
-    database_name: str,
+    database_name: str = None,
 ):
     """Get existing nodes from knowledge graph use name,if exists, merge data, else create, then upsert."""
     already_entity_types = []
@@ -220,7 +220,7 @@ async def _merge_nodes_then_upsert(
     already_description = []
     already_file_paths = []
 
-    already_node = await knowledge_graph_inst.get_node(entity_name)
+    already_node = await knowledge_graph_inst.get_node(entity_name, database_name)
     if already_node is not None:
         already_entity_types.append(already_node["entity_type"])
         already_source_ids.extend(
@@ -262,6 +262,7 @@ async def _merge_nodes_then_upsert(
     await knowledge_graph_inst.upsert_node(
         entity_name,
         node_data=node_data,
+        database_name=database_name,
     )
     node_data["entity_name"] = entity_name
     return node_data
@@ -273,6 +274,7 @@ async def _merge_edges_then_upsert(
     edges_data: list[dict],
     knowledge_graph_inst: BaseGraphStorage,
     global_config: dict,
+    database_name: str = None,
 ):
     already_weights = []
     already_source_ids = []
@@ -280,8 +282,8 @@ async def _merge_edges_then_upsert(
     already_keywords = []
     already_file_paths = []
 
-    if await knowledge_graph_inst.has_edge(src_id, tgt_id):
-        already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id)
+    if await knowledge_graph_inst.has_edge(src_id, tgt_id, database_name):
+        already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id, database_name)
         # Handle the case where get_edge returns None or missing fields
         if already_edge:
             # Get weight with default 0.0 if missing
@@ -347,7 +349,7 @@ async def _merge_edges_then_upsert(
     )
 
     for need_insert_id in [src_id, tgt_id]:
-        if not (await knowledge_graph_inst.has_node(need_insert_id)):
+        if not (await knowledge_graph_inst.has_node(need_insert_id, database_name)):
             await knowledge_graph_inst.upsert_node(
                 need_insert_id,
                 node_data={
@@ -357,6 +359,7 @@ async def _merge_edges_then_upsert(
                     "entity_type": "UNKNOWN",
                     "file_path": file_path,
                 },
+                database_name=database_name,
             )
     description = await _handle_entity_relation_summary(
         f"({src_id}, {tgt_id})", description, global_config
@@ -371,6 +374,7 @@ async def _merge_edges_then_upsert(
             source_id=source_id,
             file_path=file_path,
         ),
+        database_name=database_name,
     )
 
     edge_data = dict(
@@ -394,7 +398,8 @@ async def extract_entities(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
-    workspace: str = "default"
+    workspace: str = "default",
+    database_name: str = None,
 ) -> None:
     use_llm_func: callable = global_config["llm_model_func"]
     entity_extract_max_gleaning = global_config["entity_extract_max_gleaning"]
@@ -453,7 +458,6 @@ async def extract_entities(
 
     async def _user_llm_func_with_cache(
         input_text: str, history_messages: list[dict[str, str]] = None,
-        workspace:str = "default"
     ) -> str:
         if enable_llm_cache_for_entity_extract and llm_response_cache:
             if history_messages:
@@ -545,11 +549,12 @@ async def extract_entities(
 
         return maybe_nodes, maybe_edges
 
-    async def _process_single_content(chunk_key_dp: tuple[str, TextChunkSchema], workspace: str):
+    async def _process_single_content(chunk_key_dp: tuple[str, TextChunkSchema]):
         """Process a single chunk
         Args:
             chunk_key_dp (tuple[str, TextChunkSchema]):
                 ("chunk-xxxxxx", {"tokens": int, "content": str, "full_doc_id": str, "chunk_order_index": int})
+
         """
         nonlocal processed_chunks, total_entities_count, total_relations_count
         chunk_key = chunk_key_dp[0]
@@ -563,7 +568,7 @@ async def extract_entities(
             **context_base, input_text="{input_text}"
         ).format(**context_base, input_text=content)
 
-        final_result = await _user_llm_func_with_cache(hint_prompt, workspace=workspace)
+        final_result = await _user_llm_func_with_cache(hint_prompt)
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result)
 
         # Process initial extraction with file path
@@ -574,7 +579,7 @@ async def extract_entities(
         # Process additional gleaning results
         for now_glean_index in range(entity_extract_max_gleaning):
             glean_result = await _user_llm_func_with_cache(
-                continue_prompt, history_messages=history, workspace=workspace
+                continue_prompt, history_messages=history
             )
 
             history += pack_user_ass_to_openai_messages(continue_prompt, glean_result)
@@ -618,7 +623,7 @@ async def extract_entities(
             # Process and update entities
             for entity_name, entities in maybe_nodes.items():
                 entity_data = await _merge_nodes_then_upsert(
-                    entity_name, entities, knowledge_graph_inst, global_config
+                    entity_name, entities, knowledge_graph_inst, global_config, database_name,
                 )
                 chunk_entities_data.append(entity_data)
 
@@ -632,6 +637,7 @@ async def extract_entities(
                     edges,
                     knowledge_graph_inst,
                     global_config,
+                    database_name,
                 )
                 chunk_relationships_data.append(edge_data)
 
@@ -647,7 +653,7 @@ async def extract_entities(
                     }
                     for dp in chunk_entities_data
                 }
-                await entity_vdb.upsert(data_for_vdb)
+                await entity_vdb.upsert(data_for_vdb, workspace=workspace)
 
             if relationships_vdb is not None and chunk_relationships_data:
                 data_for_vdb = {
@@ -661,7 +667,7 @@ async def extract_entities(
                     }
                     for dp in chunk_relationships_data
                 }
-                await relationships_vdb.upsert(data_for_vdb)
+                await relationships_vdb.upsert(data_for_vdb, workspace = workspace)
 
             # Update counters
             total_entities_count += len(chunk_entities_data)
@@ -1026,13 +1032,13 @@ async def mix_kg_vector_query(
             # Reduce top_k for vector search in hybrid mode since we have structured information from KG
             mix_topk = min(10, query_param.top_k)
             results = await chunks_vdb.query(
-                augmented_query, top_k=mix_topk, ids=query_param.ids
+                augmented_query, top_k=mix_topk, ids=query_param.ids, workspace=query_param.workspace
             )
             if not results:
                 return None
 
             chunks_ids = [r["id"] for r in results]
-            chunks = await text_chunks_db.get_by_ids(chunks_ids)
+            chunks = await text_chunks_db.get_by_ids(chunks_ids, workspace=query_param.workspace)
 
             valid_chunks = []
             for chunk, result in zip(chunks, results):
@@ -1041,13 +1047,14 @@ async def mix_kg_vector_query(
                     chunk_with_time = {
                         "content": chunk["content"],
                         "created_at": result.get("created_at", None),
+                        "file_path": chunk.get("file_path", "unknown_source"),
                     }
                     valid_chunks.append(chunk_with_time)
 
             if not valid_chunks:
                 return None
 
-            maybe_trun_chunks = truncate_list_by_token_size(
+            maybe_trun_chunks:list[int] = truncate_list_by_token_size(
                 valid_chunks,
                 key=lambda x: x["content"],
                 max_token_size=query_param.max_token_for_text_unit,
@@ -1138,6 +1145,7 @@ async def mix_kg_vector_query(
                 mode="mix",
                 cache_type="query",
             ),
+            workspace=query_param.workspace,
         )
 
     return response

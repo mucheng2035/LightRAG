@@ -200,12 +200,13 @@ class Neo4JStorage(BaseGraphStorage):
         # Noe4J handles persistence automatically
         pass
 
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         """
         Check if a node with the given label exists in the database
 
         Args:
             node_id: Label of the node to check
+            database_name: database for storage
 
         Returns:
             bool: True if node exists, False otherwise
@@ -214,8 +215,9 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If node_id is invalid
             Exception: If there is an error executing the query
         """
+        database = database_name if database_name is not None else self._DATABASE
         async with self._driver.session(
-            database=self._DATABASE, default_access_mode="READ"
+            database=database, default_access_mode="READ"
         ) as session:
             try:
                 query = "MATCH (n:base {entity_id: $entity_id}) RETURN count(n) > 0 AS node_exists"
@@ -228,13 +230,14 @@ class Neo4JStorage(BaseGraphStorage):
                 await result.consume()  # Ensure results are consumed even on error
                 raise
 
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         """
         Check if an edge exists between two nodes
 
         Args:
             source_node_id: Label of the source node
             target_node_id: Label of the target node
+            database_name: database
 
         Returns:
             bool: True if edge exists, False otherwise
@@ -243,8 +246,9 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If either node_id is invalid
             Exception: If there is an error executing the query
         """
+        database = database_name if database_name is None else self._DATABASE
         async with self._driver.session(
-            database=self._DATABASE, default_access_mode="READ"
+            database=database, default_access_mode="READ"
         ) as session:
             try:
                 query = (
@@ -542,13 +546,14 @@ class Neo4JStorage(BaseGraphStorage):
             )
         ),
     )
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         """
         Upsert a node in the Neo4j database.
 
         Args:
             node_id: The unique identifier for the node (used as label)
             node_data: Dictionary of node properties
+            database_name: Neo4j database
         """
         properties = node_data
         entity_type = properties["entity_type"]
@@ -556,7 +561,8 @@ class Neo4JStorage(BaseGraphStorage):
             raise ValueError("Neo4j: node properties must contain an 'entity_id' field")
 
         try:
-            async with self._driver.session(database=self._DATABASE) as session:
+            database = database_name if database_name is not None else self._DATABASE
+            async with self._driver.session(database=database) as session:
 
                 async def execute_upsert(tx: AsyncManagedTransaction):
                     query = (
@@ -593,7 +599,7 @@ class Neo4JStorage(BaseGraphStorage):
         ),
     )
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         """
         Upsert an edge and its properties between two nodes identified by their labels.
@@ -604,13 +610,15 @@ class Neo4JStorage(BaseGraphStorage):
             source_node_id (str): Label of the source node (used as identifier)
             target_node_id (str): Label of the target node (used as identifier)
             edge_data (dict): Dictionary of properties to set on the edge
+            database_name (str): database for storage
 
         Raises:
             ValueError: If either source or target node does not exist or is not unique
         """
         try:
             edge_properties = edge_data
-            async with self._driver.session(database=self._DATABASE) as session:
+            database = database_name if database_name is not None else self._DATABASE
+            async with self._driver.session(database=database) as session:
 
                 async def execute_upsert(tx: AsyncManagedTransaction):
                     query = """
@@ -649,7 +657,7 @@ class Neo4JStorage(BaseGraphStorage):
         self,
         node_label: str,
         max_depth: int = 3,
-        max_nodes: int = MAX_GRAPH_NODES,
+        max_nodes: int = MAX_GRAPH_NODES, database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -658,6 +666,7 @@ class Neo4JStorage(BaseGraphStorage):
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maxiumu nodes to return by BFS, Defaults to 1000
+            database_name: database for storage
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -666,9 +675,9 @@ class Neo4JStorage(BaseGraphStorage):
         result = KnowledgeGraph()
         seen_nodes = set()
         seen_edges = set()
-
+        database = database_name if database_name is not None else self._DATABASE
         async with self._driver.session(
-            database=self._DATABASE, default_access_mode="READ"
+            database=database, default_access_mode="READ"
         ) as session:
             try:
                 if node_label == "*":

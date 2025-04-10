@@ -286,11 +286,11 @@ class BaseGraphStorage(StorageNameSpace, ABC):
     embedding_func: EmbeddingFunc
 
     @abstractmethod
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         """Check if an edge exists in the graph."""
 
     @abstractmethod
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         """Get the degree of a node."""
 
     @abstractmethod
@@ -316,12 +316,12 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         """Upsert a node into the graph."""
 
     @abstractmethod
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         """Upsert an edge into the graph."""
 
     @abstractmethod
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         """Delete a node from the graph.
 
@@ -347,7 +347,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 3, max_nodes: int = 1000
+        self, node_label: str, max_depth: int = 3, max_nodes: int = 1000, database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.

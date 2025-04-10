@@ -155,7 +155,7 @@ class GremlinStorage(BaseGraphStorage):
 
         return result
 
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         entity_name = GremlinStorage._fix_name(node_id)
 
         query = f"""g
@@ -176,7 +176,7 @@ class GremlinStorage(BaseGraphStorage):
 
         return result[0]["has_node"]
 
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         entity_name_source = GremlinStorage._fix_name(source_node_id)
         entity_name_target = GremlinStorage._fix_name(target_node_id)
 
@@ -313,7 +313,7 @@ class GremlinStorage(BaseGraphStorage):
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=retry_if_exception_type((GremlinServerError,)),
     )
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         """
         Upsert a node in the Gremlin graph.
 
@@ -354,7 +354,7 @@ class GremlinStorage(BaseGraphStorage):
         retry=retry_if_exception_type((GremlinServerError,)),
     )
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         """
         Upsert an edge and its properties between two nodes identified by their names.
@@ -466,7 +466,7 @@ class GremlinStorage(BaseGraphStorage):
             return []
 
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 5
+        self, node_label: str, max_depth: int = 5, database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the entity_name includes the specified `node_label`.

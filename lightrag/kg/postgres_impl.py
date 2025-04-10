@@ -1194,7 +1194,7 @@ class PGGraphStorage(BaseGraphStorage):
 
         return result
 
-    async def has_node(self, node_id: str) -> bool:
+    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
         entity_name_label = node_id.strip('"')
 
         query = """SELECT * FROM cypher('%s', $$
@@ -1206,7 +1206,7 @@ class PGGraphStorage(BaseGraphStorage):
 
         return single_result["node_exists"]
 
-    async def has_edge(self, source_node_id: str, target_node_id: str) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
         src_label = source_node_id.strip('"')
         tgt_label = target_node_id.strip('"')
 
@@ -1327,7 +1327,7 @@ class PGGraphStorage(BaseGraphStorage):
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=retry_if_exception_type((PGGraphQueryException,)),
     )
-    async def upsert_node(self, node_id: str, node_data: dict[str, str]) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
         """
         Upsert a node in the Neo4j database.
 
@@ -1366,7 +1366,7 @@ class PGGraphStorage(BaseGraphStorage):
         retry=retry_if_exception_type((PGGraphQueryException,)),
     )
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str]
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
     ) -> None:
         """
         Upsert an edge and its properties between two nodes identified by their labels.
@@ -1514,7 +1514,7 @@ class PGGraphStorage(BaseGraphStorage):
         self,
         node_label: str,
         max_depth: int = 3,
-        max_nodes: int = MAX_GRAPH_NODES,
+        max_nodes: int = MAX_GRAPH_NODES, database_name: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
