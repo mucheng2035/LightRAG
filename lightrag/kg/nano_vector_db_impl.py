@@ -84,7 +84,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
         2. Only one process should updating the storage at a time before index_done_callback,
            KG-storage-log should be used to avoid data corruption
         """
-        logger.info(f"Inserting {len(data)} to {self.namespace}")
+        logger.debug(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
 

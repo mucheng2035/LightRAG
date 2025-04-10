@@ -956,7 +956,7 @@ class PGDocStatusStorage(DocStatusStorage):
             data: dictionary of document IDs and their status data
             workspace: workspace for documents
         """
-        logger.info(f"Inserting {len(data)} to {self.namespace}")
+        logger.debug(f"Inserting {len(data)} to {self.namespace}")
         if not data:
             return
 
