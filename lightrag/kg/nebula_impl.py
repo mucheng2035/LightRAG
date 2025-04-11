@@ -137,10 +137,12 @@ class NebulaStorage(BaseGraphStorage):
             ) as session:
                 namespace = namespace if namespace is not None else self._space_name
                 session.execute(f"USE {namespace}")
-                query = f"FETCH PROP ON base '{node_id}' YIELD base.entity_id"
+                query = f""" MATCH (n) 
+                        WHERE id(n) == '{node_id}' return count(n) as icount """
                 result = session.execute(query)
                 return result.is_succeeded() and len(result.as_data_frame())> 0
-
+            
+            
     async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
         """
         Check if an edge exists between two nodes
@@ -150,13 +152,13 @@ class NebulaStorage(BaseGraphStorage):
                 self.USERNAME, self.PASSWORD
             ) as session:
                 namespace = namespace if not  None else self._space_name
-                session.execute(f"USE {namespace}")
-                query = (
-                    f"GO FROM '{source_node_id}' OVER * BIDIRECT "
-                    f"YIELD edge AS e WHERE id($$) == '{target_node_id}'"
-                )
+                session.execute(f"USE {namespace}")             
+                query =  f''' MATCH (src)-[r]-(neighbor)
+                       WHERE id(src) =='{source_node_id}' AND id(neighbor)=='{target_node_id}'
+                      RETURN count(r) as icount
+                   '''   
                 result = session.execute(query)
-                return result.is_succeeded() and result.row_size() > 0
+                return result.is_succeeded() and len(result.as_data_frame()) > 0
 
     async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
         """Get node by its entity_id"""
@@ -277,18 +279,43 @@ class NebulaStorage(BaseGraphStorage):
                 self.USERNAME, self.PASSWORD
             ) as session:
                 namespace = namespace if namespace is not None else self._space_name
-                session.execute(f"USE {namespace}")
-                query = f"GO FROM '{source_node_id}' OVER * YIELD id($$) AS target"
-                result = session.execute(query).as_data_frame()
+                try:                    
+                    session.execute(f"USE {namespace}")
+                    query = """MATCH (n:base)-[r]-(connected:base)
+                                WHERE  id(n)=='{source_node_id}' and connected.entity_id IS NOT NULL 
+                                RETURN n, r, connected"""
+                    results =  session.execute(query).as_data_frame()
+
+                    edges = []
+                    for _,record in results.iterrows():
+                        source_node = record["n"]
+                        connected_node = record["connected"]
+
+                        # Skip if either node is None
+                        if not source_node or not connected_node:
+                            continue
+
+                        source_label = (
+                            source_node.get("entity_id")
+                            if source_node.get("entity_id")
+                            else None
+                        )
+                        target_label = (
+                            connected_node.get("entity_id")
+                            if connected_node.get("entity_id")
+                            else None
+                        )
+
+                        if source_label and target_label:
+                            edges.append((source_label, target_label))
+
                 
-                if not result.is_succeeded():
-                    return None
-                
-                edges = []
-                for _,row in result.iterrows():
-                    target = row[0]
-                    edges.append((source_node_id, target))
-                return edges
+                    return edges
+                except Exception as e:
+                    logger.error(
+                        f"Error getting edges for node {source_node_id}: {str(e)}"
+                    )                   
+                    raise
 
     @retry(
         stop=stop_after_attempt(3),
