@@ -109,6 +109,7 @@ async def _handle_entity_relation_summary(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
+    workspace: str = "default",
 ) -> str:
     """Handle entity relation summary
     For each entity or relation, input is the combined description of already existing description and new description.
@@ -153,6 +154,7 @@ async def _handle_entity_relation_summary(
         llm_response_cache=llm_response_cache,
         max_tokens=summary_max_tokens,
         cache_type="extract",
+        workspace= workspace,
     )
     return summary
 
@@ -235,7 +237,7 @@ async def _merge_nodes_then_upsert(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
-    database_name: str = None,
+    namespace: str = None,
 ):
     """Get existing nodes from knowledge graph use name,if exists, merge data, else create, then upsert."""
     already_entity_types = []
@@ -243,7 +245,7 @@ async def _merge_nodes_then_upsert(
     already_description = []
     already_file_paths = []
 
-    already_node = await knowledge_graph_inst.get_node(entity_name, database_name)
+    already_node = await knowledge_graph_inst.get_node(entity_name, namespace)
     if already_node is not None:
         # Update pipeline status when a node that needs merging is found
         status_message = f"Merging entity: {entity_name}"
@@ -298,7 +300,7 @@ async def _merge_nodes_then_upsert(
     await knowledge_graph_inst.upsert_node(
         entity_name,
         node_data=node_data,
-        database_name=database_name,
+        namespace=namespace,
     )
     node_data["entity_name"] = entity_name
     return node_data
@@ -313,7 +315,7 @@ async def _merge_edges_then_upsert(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
-    database_name: str = None,
+    namespace: str = None,
 ):
     already_weights = []
     already_source_ids = []
@@ -321,7 +323,7 @@ async def _merge_edges_then_upsert(
     already_keywords = []
     already_file_paths = []
 
-    if await knowledge_graph_inst.has_edge(src_id, tgt_id, database_name):
+    if await knowledge_graph_inst.has_edge(src_id, tgt_id, namespace):
         # Update pipeline status when an edge that needs merging is found
         status_message = f"Merging edge::: {src_id} - {tgt_id}"
         logger.info(status_message)
@@ -330,7 +332,7 @@ async def _merge_edges_then_upsert(
                 pipeline_status["latest_message"] = status_message
                 pipeline_status["history_messages"].append(status_message)
 
-        already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id, database_name)
+        already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id, namespace)
         # Handle the case where get_edge returns None or missing fields
         if already_edge:
             # Get weight with default 0.0 if missing
@@ -396,7 +398,7 @@ async def _merge_edges_then_upsert(
     )
 
     for need_insert_id in [src_id, tgt_id]:
-        if not (await knowledge_graph_inst.has_node(need_insert_id, database_name)):
+        if not (await knowledge_graph_inst.has_node(need_insert_id, namespace)):
             await knowledge_graph_inst.upsert_node(
                 need_insert_id,
                 node_data={
@@ -406,7 +408,7 @@ async def _merge_edges_then_upsert(
                     "entity_type": "UNKNOWN",
                     "file_path": file_path,
                 },
-                database_name=database_name,
+                namespace=namespace,
             )
     description = await _handle_entity_relation_summary(
         f"({src_id}, {tgt_id})",
@@ -426,7 +428,7 @@ async def _merge_edges_then_upsert(
             source_id=source_id,
             file_path=file_path,
         ),
-        database_name=database_name,
+        namespace=namespace,
     )
 
     edge_data = dict(
@@ -451,7 +453,7 @@ async def extract_entities(
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
     workspace: str = "default",
-    database_name: str = None,
+    namespace: str = None,
 ) -> None:
     use_llm_func: callable = global_config["llm_model_func"]
     entity_extract_max_gleaning = global_config["entity_extract_max_gleaning"]
@@ -576,6 +578,7 @@ async def extract_entities(
             use_llm_func,
             llm_response_cache=llm_response_cache,
             cache_type="extract",
+            workspace=workspace,
         )
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result)
 
@@ -592,6 +595,7 @@ async def extract_entities(
                 llm_response_cache=llm_response_cache,
                 history_messages=history,
                 cache_type="extract",
+                workspace=workspace,
             )
 
             history += pack_user_ass_to_openai_messages(continue_prompt, glean_result)
@@ -616,6 +620,7 @@ async def extract_entities(
                 llm_response_cache=llm_response_cache,
                 history_messages=history,
                 cache_type="extract",
+                workspace=workspace,
             )
             if_loop_result = if_loop_result.strip().strip('"').strip("'").lower()
             if if_loop_result != "yes":
@@ -646,7 +651,7 @@ async def extract_entities(
                     pipeline_status,
                     pipeline_status_lock,
                     llm_response_cache,
-                    database_name,
+                    namespace,
                 )
                 chunk_entities_data.append(entity_data)
 
@@ -663,6 +668,7 @@ async def extract_entities(
                     pipeline_status,
                     pipeline_status_lock,
                     llm_response_cache,
+                    namespace,
                 )
                 chunk_relationships_data.append(edge_data)
 
@@ -1286,10 +1292,10 @@ async def _get_node_data(
     # get entity information
     node_datas, node_degrees = await asyncio.gather(
         asyncio.gather(
-            *[knowledge_graph_inst.get_node(r["entity_name"], query_param.database_name) for r in results]
+            *[knowledge_graph_inst.get_node(r["entity_name"], query_param.namespace) for r in results]
         ),
         asyncio.gather(
-            *[knowledge_graph_inst.node_degree(r["entity_name"], query_param.database_name) for r in results]
+            *[knowledge_graph_inst.node_degree(r["entity_name"], query_param.namespace) for r in results]
         ),
     )
 
@@ -1416,7 +1422,7 @@ async def _find_most_related_text_unit_from_entities(
         if dp["source_id"] is not None
     ]
     edges = await asyncio.gather(
-        *[knowledge_graph_inst.get_node_edges(dp["entity_name"], query_param.database_name) for dp in node_datas]
+        *[knowledge_graph_inst.get_node_edges(dp["entity_name"], query_param.namespace) for dp in node_datas]
     )
     all_one_hop_nodes = set()
     for this_edges in edges:
@@ -1426,7 +1432,7 @@ async def _find_most_related_text_unit_from_entities(
 
     all_one_hop_nodes = list(all_one_hop_nodes)
     all_one_hop_nodes_data = await asyncio.gather(
-        *[knowledge_graph_inst.get_node(e, query_param.database_name) for e in all_one_hop_nodes]
+        *[knowledge_graph_inst.get_node(e, query_param.namespace) for e in all_one_hop_nodes]
     )
 
     # Add null check for node data
@@ -1565,11 +1571,11 @@ async def _get_edge_data(
 
     edge_datas, edge_degree = await asyncio.gather(
         asyncio.gather(
-            *[knowledge_graph_inst.get_edge(r["src_id"], r["tgt_id"], database_name=query_param.database_name) for r in results]
+            *[knowledge_graph_inst.get_edge(r["src_id"], r["tgt_id"], namespace=query_param.namespace) for r in results]
         ),
         asyncio.gather(
             *[
-                knowledge_graph_inst.edge_degree(r["src_id"], r["tgt_id"], database_name=query_param.database_name)
+                knowledge_graph_inst.edge_degree(r["src_id"], r["tgt_id"], namespace=query_param.namespace)
                 for r in results
             ]
         ),
@@ -1694,13 +1700,13 @@ async def _find_most_related_entities_from_relationships(
     node_datas, node_degrees = await asyncio.gather(
         asyncio.gather(
             *[
-                knowledge_graph_inst.get_node(entity_name, query_param.database_name)
+                knowledge_graph_inst.get_node(entity_name, query_param.namespace)
                 for entity_name in entity_names
             ]
         ),
         asyncio.gather(
             *[
-                knowledge_graph_inst.node_degree(entity_name, query_param.database_name)
+                knowledge_graph_inst.node_degree(entity_name, query_param.namespace)
                 for entity_name in entity_names
             ]
         ),
@@ -1949,7 +1955,7 @@ async def kg_query_with_keywords(
     )
     args_hash = compute_args_hash(query_param.mode, query, cache_type="query")
     cached_response, quantized, min_val, max_val = await handle_cache(
-        hashing_kv, args_hash, query, query_param.mode, cache_type="query"
+        hashing_kv, args_hash, query, query_param.mode, cache_type="query", workspace=query_param.workspace
     )
     if cached_response is not None:
         return cached_response

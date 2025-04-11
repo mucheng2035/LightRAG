@@ -39,7 +39,7 @@ class QueryParam:
     workspace: str =  "default"
     """ document work dir"""
 
-    database_name: str = None
+    namespace: str = None
     """neo4j database"""
 
     mode: Literal["local", "global", "hybrid", "naive", "mix"] = "global"
@@ -286,42 +286,42 @@ class BaseGraphStorage(StorageNameSpace, ABC):
     embedding_func: EmbeddingFunc
 
     @abstractmethod
-    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_node(self, node_id: str, namespace: Optional[str] = None) -> bool:
         """Check if an edge exists in the graph."""
 
     @abstractmethod
-    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
         """Get the degree of a node."""
 
     @abstractmethod
-    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
+    async def node_degree(self, node_id: str, namespace: Optional[str] = None) -> int:
         """Get the degree of an edge."""
 
     @abstractmethod
-    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, namespace: Optional[str] = None) -> int:
         """Get a node by its id."""
 
     @abstractmethod
-    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties"""
 
     @abstractmethod
     async def get_edge(
-        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None
     ) -> dict[str, str] | None:
         """Get edge properties between two nodes"""
 
     @abstractmethod
-    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, namespace: Optional[str] = None) -> list[tuple[str, str]] | None:
         """Upsert a node into the graph."""
 
     @abstractmethod
-    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], namespace: Optional[str] = None) -> None:
         """Upsert an edge into the graph."""
 
     @abstractmethod
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], namespace: Optional[str] = None
     ) -> None:
         """Delete a node from the graph.
 
@@ -332,7 +332,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         """
 
     @abstractmethod
-    async def delete_node(self, node_id: str) -> None:
+    async def delete_node(self, node_id: str, namespace: Optional[str] = None) -> None:
         """Embed nodes using an algorithm."""
 
     @abstractmethod
@@ -342,12 +342,12 @@ class BaseGraphStorage(StorageNameSpace, ABC):
         """Get all labels in the graph."""
 
     @abstractmethod
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """Get a knowledge graph of a node."""
 
     @abstractmethod
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 3, max_nodes: int = 1000, database_name: Optional[str] = None
+        self, node_label: str, max_depth: int = 3, max_nodes: int = 1000, namespace: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -356,7 +356,7 @@ class BaseGraphStorage(StorageNameSpace, ABC):
             node_label: Label of the starting node，* means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maxiumu nodes to return, Defaults to 1000（BFS if possible)
-
+            namespace: namespace for storage data
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
             indicating whether the graph was truncated due to max_nodes limit

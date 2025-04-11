@@ -28,7 +28,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
         label: str = Query(..., description="Label to get knowledge graph for"),
         max_depth: int = Query(3, description="Maximum depth of graph", ge=1),
         max_nodes: int = Query(1000, description="Maximum nodes to return", ge=1),
-        database_name: str = Query(default="test", description="departments"),
+        namespace: str = Query(default="kktest", description="kktest"),
     ):
         """
         Retrieve a connected subgraph of nodes where the label includes the specified label.
@@ -40,7 +40,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             label (str): Label of the starting node
             max_depth (int, optional): Maximum depth of the subgraph,Defaults to 3
             max_nodes: Maxiumu nodes to return
-            database_name: database_name
+            namespace: namespace
 
         Returns:
             Dict[str, List[str]]: Knowledge graph for label
@@ -49,7 +49,7 @@ def create_graph_routes(rag, api_key: Optional[str] = None):
             node_label=label,
             max_depth=max_depth,
             max_nodes=max_nodes,
-            database_name=database_name,
+            namespace=namespace,
         )
 
     return router

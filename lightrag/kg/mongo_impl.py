@@ -53,12 +53,12 @@ class ClientManager:
                         fallback="mongodb://root:root@localhost:27017/",
                     ),
                 )
-                database_name = os.environ.get(
+                namespace = os.environ.get(
                     "MONGO_DATABASE",
                     config.get("mongodb", "database", fallback="LightRAG"),
                 )
                 client = AsyncIOMotorClient(uri)
-                db = client.get_database(database_name)
+                db = client.get_database(namespace)
                 cls._instances["db"] = db
                 cls._instances["ref_count"] = 0
             cls._instances["ref_count"] += 1
@@ -402,7 +402,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_node(self, node_id: str, namespace: Optional[str] = None) -> bool:
         """
         Check if node_id is present in the collection by looking up its doc.
         No real need for $graphLookup here, but let's keep it direct.
@@ -410,7 +410,7 @@ class MongoGraphStorage(BaseGraphStorage):
         doc = await self.collection.find_one({"_id": node_id}, {"_id": 1})
         return doc is not None
 
-    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
         """
         Check if there's a direct single-hop edge from source_node_id to target_node_id.
 
@@ -458,7 +458,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
+    async def node_degree(self, node_id: str, namespace: Optional[str] = None) -> int:
         """
         Returns the total number of edges connected to node_id (both inbound and outbound).
         The easiest approach is typically two queries:
@@ -507,7 +507,7 @@ class MongoGraphStorage(BaseGraphStorage):
 
         return outbound_count + inbound_count
 
-    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, namespace: Optional[str] = None) -> int:
         """
         If your graph can hold multiple edges from the same src to the same tgt
         (e.g. different 'relation' values), you can sum them. If it's always
@@ -547,14 +547,14 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
         """
         Return the full node document (including "edges"), or None if missing.
         """
         return await self.collection.find_one({"_id": node_id})
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None
     ) -> dict[str, str] | None:
         pipeline = [
             {"$match": {"_id": source_node_id}},
@@ -581,7 +581,7 @@ class MongoGraphStorage(BaseGraphStorage):
                 return e
         return None
 
-    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, namespace: Optional[str] = None) -> list[tuple[str, str]] | None:
         """
         Return a list of (source_id, target_id) for direct edges from source_node_id.
         Demonstrates $graphLookup at maxDepth=0, though direct doc retrieval is simpler.
@@ -615,7 +615,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], namespace: Optional[str] = None) -> None:
         """
         Insert or update a node document. If new, create an empty edges array.
         """
@@ -625,7 +625,7 @@ class MongoGraphStorage(BaseGraphStorage):
         await self.collection.update_one({"_id": node_id}, update_doc, upsert=True)
 
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], namespace: Optional[str] = None
     ) -> None:
         """
         Upsert an edge from source_node_id -> target_node_id with optional 'relation'.
@@ -702,7 +702,7 @@ class MongoGraphStorage(BaseGraphStorage):
         return labels
 
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 5, database_name: Optional[str] = None
+        self, node_label: str, max_depth: int = 5, namespace: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Get complete connected subgraph for specified node (including the starting node itself)

@@ -200,13 +200,13 @@ class Neo4JStorage(BaseGraphStorage):
         # Noe4J handles persistence automatically
         pass
 
-    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_node(self, node_id: str, namespace: Optional[str] = None) -> bool:
         """
         Check if a node with the given label exists in the database
 
         Args:
             node_id: Label of the node to check
-            database_name: database for storage
+            namespace: database for storage
 
         Returns:
             bool: True if node exists, False otherwise
@@ -215,7 +215,7 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If node_id is invalid
             Exception: If there is an error executing the query
         """
-        database = database_name if database_name is not None else self._DATABASE
+        database = namespace if namespace is not None else self._DATABASE
         async with self._driver.session(
             database=database, default_access_mode="READ"
         ) as session:
@@ -230,14 +230,14 @@ class Neo4JStorage(BaseGraphStorage):
                 await result.consume()  # Ensure results are consumed even on error
                 raise
 
-    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
         """
         Check if an edge exists between two nodes
 
         Args:
             source_node_id: Label of the source node
             target_node_id: Label of the target node
-            database_name: database
+            namespace: database
 
         Returns:
             bool: True if edge exists, False otherwise
@@ -246,7 +246,7 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If either node_id is invalid
             Exception: If there is an error executing the query
         """
-        database = database_name if database_name is None else self._DATABASE
+        database = namespace if namespace is None else self._DATABASE
         async with self._driver.session(
             database=database, default_access_mode="READ"
         ) as session:
@@ -270,12 +270,12 @@ class Neo4JStorage(BaseGraphStorage):
                 await result.consume()  # Ensure results are consumed even on error
                 raise
 
-    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
         """Get node by its label identifier, return only node properties
 
         Args:
             node_id: The node label to look up
-            database_name: Optional name of the database to use (defaults to self._DATABASE)
+            namespace: Optional name of the database to use (defaults to self._DATABASE)
 
         Returns:
             dict: Node properties if found
@@ -285,7 +285,7 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If node_id is invalid
             Exception: If there is an error executing the query
         """
-        database = database_name if database_name is not None else self._DATABASE
+        database = namespace if namespace is not None else self._DATABASE
         async with self._driver.session(
             database=database, default_access_mode="READ"
         ) as session:
@@ -320,14 +320,14 @@ class Neo4JStorage(BaseGraphStorage):
                 logger.error(f"Error getting node for {node_id}: {str(e)}")
                 raise
 
-    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
+    async def node_degree(self, node_id: str, namespace: Optional[str] = None) -> int:
         """Get the degree (number of relationships) of a node with the given label.
         If multiple nodes have the same label, returns the degree of the first node.
         If no node is found, returns 0.
 
         Args:
             node_id: The label of the node
-            database_name: Optional name of the database to use (defaults to self._DATABASE)
+            namespace: Optional name of the database to use (defaults to self._DATABASE)
 
         Returns:
             int: The number of relationships the node has, or 0 if no node found
@@ -336,7 +336,7 @@ class Neo4JStorage(BaseGraphStorage):
             ValueError: If node_id is invalid
             Exception: If there is an error executing the query
         """
-        database = database_name if database_name is not None else self._DATABASE
+        database = namespace if namespace is not None else self._DATABASE
         async with self._driver.session(
             database=database, default_access_mode="READ"
         ) as session:
@@ -365,19 +365,19 @@ class Neo4JStorage(BaseGraphStorage):
                 logger.error(f"Error getting node degree for {node_id}: {str(e)}")
                 raise
 
-    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, namespace: Optional[str] = None) -> int:
         """Get the total degree (sum of relationships) of two nodes.
 
         Args:
             src_id: Label of the source node
             tgt_id: Label of the target node
-            database_name: Optional name of the database to use (defaults to self._DATABASE)
+            namespace: Optional name of the database to use (defaults to self._DATABASE)
 
         Returns:
             int: Sum of the degrees of both nodes
         """
-        src_degree = await self.node_degree(src_id, database_name)
-        trg_degree = await self.node_degree(tgt_id, database_name)
+        src_degree = await self.node_degree(src_id, namespace)
+        trg_degree = await self.node_degree(tgt_id, namespace)
 
         # Convert None to 0 for addition
         src_degree = 0 if src_degree is None else src_degree
@@ -387,14 +387,14 @@ class Neo4JStorage(BaseGraphStorage):
         return degrees
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None
     ) -> dict[str, str] | None:
         """Get edge properties between two nodes.
 
         Args:
             source_node_id: Label of the source node
             target_node_id: Label of the target node
-            database_name: Optional name of the database to use (defaults to self._DATABASE)
+            namespace: Optional name of the database to use (defaults to self._DATABASE)
         Returns:
             dict: Edge properties if found, default properties if not found or on error
 
@@ -403,7 +403,7 @@ class Neo4JStorage(BaseGraphStorage):
             Exception: If there is an error executing the query
         """
         try:
-            database = database_name if database_name is not None else self._DATABASE
+            database = namespace if namespace is not None else self._DATABASE
             async with self._driver.session(
                 database=database, default_access_mode="READ"
             ) as session:
@@ -473,12 +473,12 @@ class Neo4JStorage(BaseGraphStorage):
             )
             raise
 
-    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, namespace: Optional[str] = None) -> list[tuple[str, str]] | None:
         """Retrieves all edges (relationships) for a particular node identified by its label.
 
         Args:
             source_node_id: Label of the node to get edges for
-            database_name: Optional name of the database to use (defaults to self._DATABASE)
+            namespace: Optional name of the database to use (defaults to self._DATABASE)
         Returns:
             list[tuple[str, str]]: List of (source_label, target_label) tuples representing edges
             None: If no edges found
@@ -488,7 +488,7 @@ class Neo4JStorage(BaseGraphStorage):
             Exception: If there is an error executing the query
         """
         try:
-            database = database_name if database_name is not None else self._DATABASE
+            database = namespace if namespace is not None else self._DATABASE
             async with self._driver.session(
                 database=database, default_access_mode="READ"
             ) as session:
@@ -546,14 +546,14 @@ class Neo4JStorage(BaseGraphStorage):
             )
         ),
     )
-    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], namespace: Optional[str] = None) -> None:
         """
         Upsert a node in the Neo4j database.
 
         Args:
             node_id: The unique identifier for the node (used as label)
             node_data: Dictionary of node properties
-            database_name: Neo4j database
+            namespace: Neo4j database
         """
         properties = node_data
         entity_type = properties["entity_type"]
@@ -561,7 +561,7 @@ class Neo4JStorage(BaseGraphStorage):
             raise ValueError("Neo4j: node properties must contain an 'entity_id' field")
 
         try:
-            database = database_name if database_name is not None else self._DATABASE
+            database = namespace if namespace is not None else self._DATABASE
             async with self._driver.session(database=database) as session:
 
                 async def execute_upsert(tx: AsyncManagedTransaction):
@@ -599,7 +599,7 @@ class Neo4JStorage(BaseGraphStorage):
         ),
     )
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], namespace: Optional[str] = None
     ) -> None:
         """
         Upsert an edge and its properties between two nodes identified by their labels.
@@ -610,14 +610,14 @@ class Neo4JStorage(BaseGraphStorage):
             source_node_id (str): Label of the source node (used as identifier)
             target_node_id (str): Label of the target node (used as identifier)
             edge_data (dict): Dictionary of properties to set on the edge
-            database_name (str): database for storage
+            namespace (str): database for storage
 
         Raises:
             ValueError: If either source or target node does not exist or is not unique
         """
         try:
             edge_properties = edge_data
-            database = database_name if database_name is not None else self._DATABASE
+            database = namespace if namespace is not None else self._DATABASE
             async with self._driver.session(database=database) as session:
 
                 async def execute_upsert(tx: AsyncManagedTransaction):
@@ -657,7 +657,7 @@ class Neo4JStorage(BaseGraphStorage):
         self,
         node_label: str,
         max_depth: int = 3,
-        max_nodes: int = MAX_GRAPH_NODES, database_name: Optional[str] = None
+        max_nodes: int = MAX_GRAPH_NODES, namespace: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified `node_label`.
@@ -666,7 +666,7 @@ class Neo4JStorage(BaseGraphStorage):
             node_label: Label of the starting node, * means all nodes
             max_depth: Maximum depth of the subgraph, Defaults to 3
             max_nodes: Maxiumu nodes to return by BFS, Defaults to 1000
-            database_name: database for storage
+            namespace: database for storage
 
         Returns:
             KnowledgeGraph object containing nodes and edges, with an is_truncated flag
@@ -675,7 +675,7 @@ class Neo4JStorage(BaseGraphStorage):
         result = KnowledgeGraph()
         seen_nodes = set()
         seen_edges = set()
-        database = database_name if database_name is not None else self._DATABASE
+        database = namespace if namespace is not None else self._DATABASE
         async with self._driver.session(
             database=database, default_access_mode="READ"
         ) as session:
@@ -1060,7 +1060,7 @@ class Neo4JStorage(BaseGraphStorage):
             )
         ),
     )
-    async def delete_node(self, node_id: str) -> None:
+    async def delete_node(self, node_id: str, namespace: Optional[str] = None) -> None:
         """Delete a node with the specified label
 
         Args:
@@ -1077,7 +1077,8 @@ class Neo4JStorage(BaseGraphStorage):
             await result.consume()  # Ensure result is fully consumed
 
         try:
-            async with self._driver.session(database=self._DATABASE) as session:
+            namespace = namespace or self._DATABASE
+            async with self._driver.session(database=namespace) as session:
                 await session.execute_write(_do_delete)
         except Exception as e:
             logger.error(f"Error during node deletion: {str(e)}")

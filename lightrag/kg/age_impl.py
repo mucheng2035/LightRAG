@@ -360,7 +360,7 @@ class AGEStorage(BaseGraphStorage):
 
                 return result
 
-    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_node(self, node_id: str, namespace: Optional[str] = None) -> bool:
         entity_name_label = node_id.strip('"')
 
         query = """
@@ -377,7 +377,7 @@ class AGEStorage(BaseGraphStorage):
 
         return single_result["node_exists"]
 
-    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
         entity_name_label_source = source_node_id.strip('"')
         entity_name_label_target = target_node_id.strip('"')
 
@@ -398,7 +398,7 @@ class AGEStorage(BaseGraphStorage):
         )
         return single_result["edge_exists"]
 
-    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
         entity_name_label = node_id.strip('"')
         query = """
                 MATCH (n:`{label}`) RETURN n
@@ -417,7 +417,7 @@ class AGEStorage(BaseGraphStorage):
             return node_dict
         return None
 
-    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
+    async def node_degree(self, node_id: str, namespace: Optional[str] = None) -> int:
         entity_name_label = node_id.strip('"')
 
         query = """
@@ -436,7 +436,7 @@ class AGEStorage(BaseGraphStorage):
             )
             return edge_count
 
-    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, namespace: Optional[str] = None) -> int:
         entity_name_label_source = src_id.strip('"')
         entity_name_label_target = tgt_id.strip('"')
         src_degree = await self.node_degree(entity_name_label_source)
@@ -455,7 +455,7 @@ class AGEStorage(BaseGraphStorage):
         return degrees
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None
     ) -> dict[str, str] | None:
         entity_name_label_source = source_node_id.strip('"')
         entity_name_label_target = target_node_id.strip('"')
@@ -480,7 +480,7 @@ class AGEStorage(BaseGraphStorage):
             )
             return result
 
-    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, namespace: Optional[str] = None) -> list[tuple[str, str]] | None:
         """
         Retrieves all edges (relationships) for a particular node identified by its label.
         :return: List of dictionaries containing edge information
@@ -518,7 +518,7 @@ class AGEStorage(BaseGraphStorage):
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=retry_if_exception_type((AGEQueryException,)),
     )
-    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], namespace: Optional[str] = None) -> None:
         """
         Upsert a node in the AGE database.
 
@@ -554,7 +554,7 @@ class AGEStorage(BaseGraphStorage):
         retry=retry_if_exception_type((AGEQueryException,)),
     )
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], namespace: Optional[str] = None
     ) -> None:
         """
         Upsert an edge and its properties between two nodes identified by their labels.
@@ -612,7 +612,7 @@ class AGEStorage(BaseGraphStorage):
         finally:
             await self._driver.putconn(connection)
 
-    async def delete_node(self, node_id: str) -> None:
+    async def delete_node(self, node_id: str, namespace: Optional[str] = None) -> None:
         """Delete a node with the specified label
 
         Args:
@@ -708,7 +708,7 @@ class AGEStorage(BaseGraphStorage):
         return sorted(list(set(all_labels)))
 
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 5, database_name: Optional[str] = None
+        self, node_label: str, max_depth: int = 5, namespace: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Retrieve a connected subgraph of nodes where the label includes the specified 'node_label'.

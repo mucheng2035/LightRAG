@@ -733,7 +733,7 @@ class TiDBGraphStorage(BaseGraphStorage):
             self.db = None
 
     #################### upsert method ################
-    async def upsert_node(self, node_id: str, node_data: dict[str, str], database_name: Optional[str] = None) -> None:
+    async def upsert_node(self, node_id: str, node_data: dict[str, str], namespace: Optional[str] = None) -> None:
         entity_name = node_id
         entity_type = node_data["entity_type"]
         description = node_data["description"]
@@ -763,7 +763,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         await self.db.execute(sql, data)
 
     async def upsert_edge(
-        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], namespace: Optional[str] = None
     ) -> None:
         source_name = source_node_id
         target_name = target_node_id
@@ -809,13 +809,13 @@ class TiDBGraphStorage(BaseGraphStorage):
 
     # Query
 
-    async def has_node(self, node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_node(self, node_id: str, namespace: Optional[str] = None) -> bool:
         sql = SQL_TEMPLATES["has_entity"]
         param = {"name": node_id, "workspace": self.db.workspace}
         has = await self.db.query(sql, param)
         return has["cnt"] != 0
 
-    async def has_edge(self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None) -> bool:
+    async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
         sql = SQL_TEMPLATES["has_relationship"]
         param = {
             "source_name": source_node_id,
@@ -825,23 +825,23 @@ class TiDBGraphStorage(BaseGraphStorage):
         has = await self.db.query(sql, param)
         return has["cnt"] != 0
 
-    async def node_degree(self, node_id: str, database_name: Optional[str] = None) -> int:
+    async def node_degree(self, node_id: str, namespace: Optional[str] = None) -> int:
         sql = SQL_TEMPLATES["node_degree"]
         param = {"name": node_id, "workspace": self.db.workspace}
         result = await self.db.query(sql, param)
         return result["cnt"]
 
-    async def edge_degree(self, src_id: str, tgt_id: str, database_name: Optional[str] = None) -> int:
+    async def edge_degree(self, src_id: str, tgt_id: str, namespace: Optional[str] = None) -> int:
         degree = await self.node_degree(src_id) + await self.node_degree(tgt_id)
         return degree
 
-    async def get_node(self, node_id: str, database_name: Optional[str] = None) -> dict[str, str] | None:
+    async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
         sql = SQL_TEMPLATES["get_node"]
         param = {"name": node_id, "workspace": self.db.workspace}
         return await self.db.query(sql, param)
 
     async def get_edge(
-        self, source_node_id: str, target_node_id: str, database_name: Optional[str] = None
+        self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None
     ) -> dict[str, str] | None:
         sql = SQL_TEMPLATES["get_edge"]
         param = {
@@ -851,7 +851,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         }
         return await self.db.query(sql, param)
 
-    async def get_node_edges(self, source_node_id: str, database_name: Optional[str] = None) -> list[tuple[str, str]] | None:
+    async def get_node_edges(self, source_node_id: str, namespace: Optional[str] = None) -> list[tuple[str, str]] | None:
         sql = SQL_TEMPLATES["get_node_edges"]
         param = {"source_name": source_node_id, "workspace": self.db.workspace}
         res = await self.db.query(sql, param, multirows=True)
@@ -918,7 +918,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         return [item["label"] for item in result]
 
     async def get_knowledge_graph(
-        self, node_label: str, max_depth: int = 5, database_name: Optional[str] = None
+        self, node_label: str, max_depth: int = 5, namespace: Optional[str] = None
     ) -> KnowledgeGraph:
         """
         Get a connected subgraph of nodes matching the specified label
@@ -927,6 +927,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         Args:
             node_label: The node label to match
             max_depth: Maximum depth of the subgraph
+            namespace: namespace for storage data
 
         Returns:
             KnowledgeGraph object containing nodes and edges

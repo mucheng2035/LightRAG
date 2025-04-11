@@ -584,19 +584,19 @@ async def pipeline_enqueue_file(rag: LightRAG, file_path: Path, workspace: str =
     return False
 
 
-async def pipeline_index_file(rag: LightRAG, file_path: Path, workspace: str = "default", database_name: str = None):
+async def pipeline_index_file(rag: LightRAG, file_path: Path, workspace: str = "default", namespace: str = None):
     """Index a file
 
     Args:
         rag: LightRAG instance
         file_path: Path to the saved file
         workspace: workspace for the document
-        database_name: database_name for neo4j
+        namespace: namespace for neo4j
     """
     try:
         if await pipeline_enqueue_file(rag, file_path, workspace):
             logger.debug(f"apipeline_process_enqueue_documents {workspace} start")
-            await rag.apipeline_process_enqueue_documents(workspace = workspace, database_name = database_name)
+            await rag.apipeline_process_enqueue_documents(workspace = workspace, namespace = namespace)
 
     except Exception as e:
         logger.error(f"Error indexing file {file_path.name}: {str(e)}")
@@ -735,7 +735,7 @@ def create_document_routes(
     async def upload_to_input_dir(
         background_tasks: BackgroundTasks, file: UploadFile = File(...),
         workspace: str = Query(default="default", description="工作空间"),
-        database_name: str= Query(default=None, description="图谱库名"),
+        namespace: str= Query(default=None, description="图谱库名"),
     ):
         """
         Upload a file to the input directory and index it.
@@ -748,7 +748,7 @@ def create_document_routes(
             background_tasks: FastAPI BackgroundTasks for async processing
             file (UploadFile): The file to be uploaded. It must have an allowed extension.
             workspace (str): The workspace identifier.
-            database_name (str): The database_name identifier.
+            namespace (str): The namespace identifier.
 
         Returns:
             InsertResponse: A response object containing the upload status and a message.
@@ -781,7 +781,7 @@ def create_document_routes(
                 shutil.copyfileobj(file.file, buffer)
 
             # Add to background tasks
-            background_tasks.add_task(pipeline_index_file, rag, file_path, workspace, database_name)
+            background_tasks.add_task(pipeline_index_file, rag, file_path, workspace, namespace)
 
             return InsertResponse(
                 status="success",

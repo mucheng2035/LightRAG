@@ -17,7 +17,7 @@ router = APIRouter(tags=["query"])
 
 
 class QueryRequest(BaseModel):
-    database_name: str = Field(
+    namespace: str = Field(
         min_length=1,
         description="图谱库名",
         default=None,

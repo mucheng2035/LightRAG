@@ -922,6 +922,7 @@ async def use_llm_func_with_cache(
     max_tokens: int = None,
     history_messages: list[dict[str, str]] = None,
     cache_type: str = "extract",
+    workspace: str = "default",
 ) -> str:
     """Call LLM function with cache support
 
@@ -935,6 +936,7 @@ async def use_llm_func_with_cache(
         max_tokens: Maximum tokens for generation
         history_messages: History messages list
         cache_type: Type of cache
+        workspace: workspace for documents
 
     Returns:
         LLM response text
@@ -953,6 +955,7 @@ async def use_llm_func_with_cache(
             _prompt,
             "default",
             cache_type=cache_type,
+            workspace=workspace,
         )
         if cached_return:
             logger.debug(f"Found cache for {arg_hash}")
@@ -979,6 +982,7 @@ async def use_llm_func_with_cache(
                 prompt=_prompt,
                 cache_type=cache_type,
             ),
+            workspace=workspace,
         )
         return res
 

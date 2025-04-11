@@ -512,7 +512,7 @@ class LightRAG:
         node_label: str,
         max_depth: int = 3,
         max_nodes: int = 1000,
-        database_name: Optional[str] = None,
+        namespace: Optional[str] = None,
     ) -> KnowledgeGraph:
         """Get knowledge graph for a given label
 
@@ -526,7 +526,7 @@ class LightRAG:
         """
 
         return await self.chunk_entity_relation_graph.get_knowledge_graph(
-            node_label, max_depth, max_nodes,database_name
+            node_label, max_depth, max_nodes,namespace = namespace
         )
 
     def _get_storage_class(self, storage_name: str) -> Callable[..., Any]:
@@ -541,6 +541,8 @@ class LightRAG:
         split_by_character_only: bool = False,
         ids: str | list[str] | None = None,
         file_paths: str | list[str] | None = None,
+        workspace: str = "default",
+        namespace: Optional[str] = None,
     ) -> None:
         """Sync Insert documents with checkpoint support
 
@@ -556,7 +558,7 @@ class LightRAG:
         loop = always_get_an_event_loop()
         loop.run_until_complete(
             self.ainsert(
-                input, split_by_character, split_by_character_only, ids, file_paths
+                input, split_by_character, split_by_character_only, ids, file_paths, workspace, namespace
             )
         )
 
@@ -567,6 +569,8 @@ class LightRAG:
         split_by_character_only: bool = False,
         ids: str | list[str] | None = None,
         file_paths: str | list[str] | None = None,
+        workspace: str = "default",
+        namespace: Optional[str] = None,
     ) -> None:
         """Async Insert documents with checkpoint support
 
@@ -578,10 +582,12 @@ class LightRAG:
             split_by_character is None, this parameter is ignored.
             ids: list of unique document IDs, if not provided, MD5 hash IDs will be generated
             file_paths: list of file paths corresponding to each document, used for citation
+            workspace: document for storage
+            namespace: namespace for storage
         """
-        await self.apipeline_enqueue_documents(input, ids, file_paths)
+        await self.apipeline_enqueue_documents(input, ids, file_paths, workspace)
         await self.apipeline_process_enqueue_documents(
-            split_by_character, split_by_character_only
+            split_by_character, split_by_character_only, workspace, namespace
         )
 
     # TODO: deprecated, use insert instead
@@ -590,15 +596,19 @@ class LightRAG:
         full_text: str,
         text_chunks: list[str],
         doc_id: str | list[str] | None = None,
+        workspace: str = "default",
+        namespace: Optional[str] = None,
     ) -> None:
         loop = always_get_an_event_loop()
         loop.run_until_complete(
-            self.ainsert_custom_chunks(full_text, text_chunks, doc_id)
+            self.ainsert_custom_chunks(full_text, text_chunks, doc_id, workspace, namespace)
         )
 
     # TODO: deprecated, use ainsert instead
     async def ainsert_custom_chunks(
-        self, full_text: str, text_chunks: list[str], doc_id: str | None = None
+        self, full_text: str, text_chunks: list[str], doc_id: str | None = None,
+        workspace: str = "default",
+        namespace: Optional[str] = None,
     ) -> None:
         update_storage = False
         try:
@@ -613,7 +623,7 @@ class LightRAG:
                 doc_key = doc_id
             new_docs = {doc_key: {"content": full_text}}
 
-            _add_doc_keys = await self.full_docs.filter_keys({doc_key})
+            _add_doc_keys = await self.full_docs.filter_keys({doc_key}, workspace)
             new_docs = {k: v for k, v in new_docs.items() if k in _add_doc_keys}
             if not len(new_docs):
                 logger.warning("This document is already in the storage.")
@@ -632,7 +642,7 @@ class LightRAG:
                 }
 
             doc_ids = set(inserting_chunks.keys())
-            add_chunk_keys = await self.text_chunks.filter_keys(doc_ids)
+            add_chunk_keys = await self.text_chunks.filter_keys(doc_ids, workspace)
             inserting_chunks = {
                 k: v for k, v in inserting_chunks.items() if k in add_chunk_keys
             }
@@ -641,10 +651,10 @@ class LightRAG:
                 return
 
             tasks = [
-                self.chunks_vdb.upsert(inserting_chunks),
-                self._process_entity_relation_graph(inserting_chunks),
-                self.full_docs.upsert(new_docs),
-                self.text_chunks.upsert(inserting_chunks),
+                self.chunks_vdb.upsert(inserting_chunks, workspace),
+                self._process_entity_relation_graph(inserting_chunks, workspace, namespace),
+                self.full_docs.upsert(new_docs, workspace),
+                self.text_chunks.upsert(inserting_chunks, workspace),
             ]
             await asyncio.gather(*tasks)
 
@@ -796,7 +806,7 @@ class LightRAG:
         split_by_character: str | None = None,
         split_by_character_only: bool = False,
         workspace: str = "default",
-        database_name: str = None,
+        namespace: str = None,
     ) -> None:
         """
         Process pending documents by splitting them into chunks, processing
@@ -806,7 +816,7 @@ class LightRAG:
             split_by_character (str | None): Character to split the document on. If None, the document is split into chunks of `chunk_token_size` tokens.
             split_by_character_only (bool): If True, the document is split only on the specified character.
             workspace (str): Workspace for document processing. Defaults to "default".
-            database_name (str): database_name for neo4j.
+            namespace (str): namespace for neo4j.
 
         1. Get all pending, failed, and abnormally terminated processing documents.
         2. Split document content into chunks
@@ -955,7 +965,7 @@ class LightRAG:
                         # 关系
                         entity_relation_task = asyncio.create_task(
                             self._process_entity_relation_graph(
-                                chunks, pipeline_status, pipeline_status_lock, workspace, database_name
+                                chunks, pipeline_status, pipeline_status_lock, workspace, namespace
                             )
                         )
                         # 更新文档内容
@@ -1105,7 +1115,7 @@ class LightRAG:
         pipeline_status=None,
         pipeline_status_lock=None,
         workspace: str = "default",
-        database_name: str = None
+        namespace: str = None
     ) -> None:
         try:
             await extract_entities(
@@ -1118,7 +1128,7 @@ class LightRAG:
                 pipeline_status_lock=pipeline_status_lock,
                 llm_response_cache=self.llm_response_cache,
                 workspace=workspace,
-                database_name = database_name
+                namespace = namespace
             )
         except Exception as e:
             logger.error("Failed to extract entities and relationships %s", e)
@@ -1151,16 +1161,18 @@ class LightRAG:
                 pipeline_status["history_messages"].append(log_message)
 
     def insert_custom_kg(
-        self, custom_kg: dict[str, Any], full_doc_id: str = None
+        self, custom_kg: dict[str, Any], full_doc_id: str = None, workspace: str = "default"
     ) -> None:
         loop = always_get_an_event_loop()
-        loop.run_until_complete(self.ainsert_custom_kg(custom_kg, full_doc_id))
+        loop.run_until_complete(self.ainsert_custom_kg(custom_kg, full_doc_id, workspace=workspace))
 
     async def ainsert_custom_kg(
         self,
         custom_kg: dict[str, Any],
         full_doc_id: str = None,
         file_path: str = "custom_kg",
+        workspace: str = "default",
+        namespace: str = None,
     ) -> None:
         update_storage = False
         try:
@@ -1199,8 +1211,8 @@ class LightRAG:
 
             if all_chunks_data:
                 await asyncio.gather(
-                    self.chunks_vdb.upsert(all_chunks_data),
-                    self.text_chunks.upsert(all_chunks_data),
+                    self.chunks_vdb.upsert(all_chunks_data, workspace),
+                    self.text_chunks.upsert(all_chunks_data, workspace),
                 )
 
             # Insert entities into knowledge graph
@@ -1227,7 +1239,7 @@ class LightRAG:
                 }
                 # Insert node data into the knowledge graph
                 await self.chunk_entity_relation_graph.upsert_node(
-                    entity_name, node_data=node_data
+                    entity_name, node_data=node_data, namespace=namespace
                 )
                 node_data["entity_name"] = entity_name
                 all_entities_data.append(node_data)
@@ -1253,7 +1265,7 @@ class LightRAG:
                 # Check if nodes exist in the knowledge graph
                 for need_insert_id in [src_id, tgt_id]:
                     if not (
-                        await self.chunk_entity_relation_graph.has_node(need_insert_id)
+                        await self.chunk_entity_relation_graph.has_node(need_insert_id, namespace)
                     ):
                         await self.chunk_entity_relation_graph.upsert_node(
                             need_insert_id,
@@ -1263,6 +1275,7 @@ class LightRAG:
                                 "description": "UNKNOWN",
                                 "entity_type": "UNKNOWN",
                             },
+                            namespace=namespace,
                         )
 
                 # Insert edge into the knowledge graph
@@ -1275,6 +1288,7 @@ class LightRAG:
                         "keywords": keywords,
                         "source_id": source_id,
                     },
+                    namespace=namespace,
                 )
                 edge_data: dict[str, str] = {
                     "src_id": src_id,
@@ -1299,7 +1313,7 @@ class LightRAG:
                 }
                 for dp in all_entities_data
             }
-            await self.entities_vdb.upsert(data_for_vdb)
+            await self.entities_vdb.upsert(data_for_vdb, workspace=workspace)
 
             # Insert relationships into vector storage with consistent format
             data_for_vdb = {
@@ -1315,7 +1329,7 @@ class LightRAG:
                 }
                 for dp in all_relationships_data
             }
-            await self.relationships_vdb.upsert(data_for_vdb)
+            await self.relationships_vdb.upsert(data_for_vdb, workspace=workspace)
 
         except Exception as e:
             logger.error(f"Error in ainsert_custom_kg: {e}")
