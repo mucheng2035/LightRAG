@@ -1525,9 +1525,9 @@ async def _find_most_related_edges_from_entities(
                 all_edges.append(sorted_edge)
 
     all_edges_pack, all_edges_degree = await asyncio.gather(
-        asyncio.gather(*[knowledge_graph_inst.get_edge(e[0], e[1]) for e in all_edges]),
+        asyncio.gather(*[knowledge_graph_inst.get_edge(e[0], e[1], query_param.namespace) for e in all_edges]),
         asyncio.gather(
-            *[knowledge_graph_inst.edge_degree(e[0], e[1]) for e in all_edges]
+            *[knowledge_graph_inst.edge_degree(e[0], e[1], query_param.namespace) for e in all_edges]
         ),
     )
     all_edges_data = [
