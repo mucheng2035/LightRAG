@@ -1028,9 +1028,6 @@ class PGGraphQueryException(Exception):
 class PGGraphStorage(BaseGraphStorage):
     def __post_init__(self):
         self.graph_name = self.namespace or os.environ.get("AGE_GRAPH_NAME", "lightrag")
-        self._node_embed_algorithms = {
-            "node2vec": self._node2vec_embed,
-        }
         self.db: PostgreSQLDB | None = None
 
     async def initialize(self):
@@ -1403,9 +1400,6 @@ class PGGraphStorage(BaseGraphStorage):
             )
             raise
 
-    async def _node2vec_embed(self):
-        print("Implemented but never called.")
-
     async def delete_node(self, node_id: str) -> None:
         """
         Delete a node from the graph.
@@ -1491,24 +1485,6 @@ class PGGraphStorage(BaseGraphStorage):
         results = await self._query(query)
         labels = [result["label"] for result in results]
         return labels
-
-    async def embed_nodes(
-        self, algorithm: str
-    ) -> tuple[np.ndarray[Any, Any], list[str]]:
-        """
-        Generate node embeddings using the specified algorithm.
-
-        Args:
-            algorithm (str): The name of the embedding algorithm to use.
-
-        Returns:
-            tuple[np.ndarray[Any, Any], list[str]]: A tuple containing the embeddings and the corresponding node IDs.
-        """
-        if algorithm not in self._node_embed_algorithms:
-            raise ValueError(f"Unsupported embedding algorithm: {algorithm}")
-
-        embed_func = self._node_embed_algorithms[algorithm]
-        return await embed_func()
 
     async def get_knowledge_graph(
         self,

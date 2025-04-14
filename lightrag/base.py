@@ -13,7 +13,6 @@ from typing import (
     Callable,
     Optional,
 )
-import numpy as np
 from .utils import EmbeddingFunc
 from .types import KnowledgeGraph
 
@@ -42,7 +41,7 @@ class QueryParam:
     namespace: str = None
     """neo4j database"""
 
-    mode: Literal["local", "global", "hybrid", "naive", "mix"] = "global"
+    mode: Literal["local", "global", "hybrid", "naive", "mix", "bypass"] = "global"
     """Specifies the retrieval mode:
     - "local": Focuses on context-dependent information.
     - "global": Utilizes global knowledge.
@@ -287,63 +286,171 @@ class BaseGraphStorage(StorageNameSpace, ABC):
 
     @abstractmethod
     async def has_node(self, node_id: str, namespace: Optional[str] = None) -> bool:
-        """Check if an edge exists in the graph."""
+        """Check if a node exists in the graph.
+
+        Args:
+            node_id: The ID of the node to check
+            namespace: namespace for data
+
+        Returns:
+            True if the node exists, False otherwise
+        """
 
     @abstractmethod
     async def has_edge(self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None) -> bool:
-        """Get the degree of a node."""
+        """Check if an edge exists between two nodes.
+
+        Args:
+            source_node_id: The ID of the source node
+            target_node_id: The ID of the target node
+            namespace: namespace for data
+
+        Returns:
+            True if the edge exists, False otherwise
+        """
 
     @abstractmethod
     async def node_degree(self, node_id: str, namespace: Optional[str] = None) -> int:
-        """Get the degree of an edge."""
+        """Get the degree (number of connected edges) of a node.
+
+        Args:
+            node_id: The ID of the node
+            namespace: namespace for data
+        Returns:
+            The number of edges connected to the node
+        """
 
     @abstractmethod
     async def edge_degree(self, src_id: str, tgt_id: str, namespace: Optional[str] = None) -> int:
-        """Get a node by its id."""
+        """Get the total degree of an edge (sum of degrees of its source and target nodes).
+
+        Args:
+            src_id: The ID of the source node
+            tgt_id: The ID of the target node
+            namespace: namespace for data
+        Returns:
+            The sum of the degrees of the source and target nodes
+        """
 
     @abstractmethod
     async def get_node(self, node_id: str, namespace: Optional[str] = None) -> dict[str, str] | None:
-        """Get node by its label identifier, return only node properties"""
+        """Get node by its ID, returning only node properties.
+
+        Args:
+            node_id: The ID of the node to retrieve
+            namespace: namespace for data
+        Returns:
+            A dictionary of node properties if found, None otherwise
+        """
 
     @abstractmethod
     async def get_edge(
         self, source_node_id: str, target_node_id: str, namespace: Optional[str] = None
     ) -> dict[str, str] | None:
-        """Get edge properties between two nodes"""
+        """Get edge properties between two nodes.
+
+        Args:
+            source_node_id: The ID of the source node
+            target_node_id: The ID of the target node
+            namespace: namespace for data
+        Returns:
+            A dictionary of edge properties if found, None otherwise
+        """
 
     @abstractmethod
     async def get_node_edges(self, source_node_id: str, namespace: Optional[str] = None) -> list[tuple[str, str]] | None:
-        """Upsert a node into the graph."""
+        """Get all edges connected to a node.
+
+        Args:
+            source_node_id: The ID of the node to get edges for
+            namespace: namespace for data
+        Returns:
+            A list of (source_id, target_id) tuples representing edges,
+            or None if the node doesn't exist
+        """
 
     @abstractmethod
     async def upsert_node(self, node_id: str, node_data: dict[str, str], namespace: Optional[str] = None) -> None:
-        """Upsert an edge into the graph."""
+        """Insert a new node or update an existing node in the graph.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            node_id: The ID of the node to insert or update
+            node_data: A dictionary of node properties
+        """
 
     @abstractmethod
     async def upsert_edge(
         self, source_node_id: str, target_node_id: str, edge_data: dict[str, str], namespace: Optional[str] = None
     ) -> None:
+        """Insert a new edge or update an existing edge in the graph.
+
+        Importance notes for in-memory storage:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            source_node_id: The ID of the source node
+            target_node_id: The ID of the target node
+            edge_data: A dictionary of edge properties
+            namespace: namespace for data
+        """
+
+    @abstractmethod
+    async def delete_node(self, node_id: str, namespace: Optional[str] = None) -> None:
         """Delete a node from the graph.
 
         Importance notes for in-memory storage:
         1. Changes will be persisted to disk during the next index_done_callback
         2. Only one process should updating the storage at a time before index_done_callback,
            KG-storage-log should be used to avoid data corruption
+
+        Args:
+            node_id: The ID of the node to delete
+            namespace: namespace for data
         """
 
     @abstractmethod
-    async def delete_node(self, node_id: str, namespace: Optional[str] = None) -> None:
-        """Embed nodes using an algorithm."""
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None):
+        """Delete multiple nodes
+
+        Importance notes:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            nodes: List of node IDs to be deleted
+            namespace: namespace for data
+        """
 
     @abstractmethod
-    async def embed_nodes(
-        self, algorithm: str
-    ) -> tuple[np.ndarray[Any, Any], list[str]]:
-        """Get all labels in the graph."""
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None):
+        """Delete multiple edges
+
+        Importance notes:
+        1. Changes will be persisted to disk during the next index_done_callback
+        2. Only one process should updating the storage at a time before index_done_callback,
+           KG-storage-log should be used to avoid data corruption
+
+        Args:
+            edges: List of edges to be deleted, each edge is a (source, target) tuple
+            namespace: namespace for data
+        """
 
     @abstractmethod
     async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
-        """Get a knowledge graph of a node."""
+        """Get all labels in the graph.
+
+        Returns:
+            A list of all node labels in the graph, sorted alphabetically
+            namespace: namespace for data
+        """
 
     @abstractmethod
     async def get_knowledge_graph(

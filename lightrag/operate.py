@@ -16,6 +16,7 @@ from .utils import (
     encode_string_by_tiktoken,
     is_float_regex,
     list_of_list_to_csv,
+    normalize_extracted_info,
     pack_user_ass_to_openai_messages,
     split_string_by_multi_markers,
     truncate_list_by_token_size,
@@ -118,15 +119,13 @@ async def _handle_entity_relation_summary(
     use_llm_func: callable = global_config["llm_model_func"]
     llm_max_tokens = global_config["llm_model_max_token_size"]
     tiktoken_model_name = global_config["tiktoken_model_name"]
-    summary_max_tokens = global_config["entity_summary_to_max_tokens"]
+    summary_max_tokens = global_config["summary_to_max_tokens"]
+
     language = global_config["addon_params"].get(
         "language", PROMPTS["DEFAULT_LANGUAGE"]
     )
 
     tokens = encode_string_by_tiktoken(description, model_name=tiktoken_model_name)
-    if len(tokens) < summary_max_tokens:  # No need for summary
-        return description
-
     prompt_template = PROMPTS["summarize_entity_descriptions"]
     use_description = decode_tokens_by_tiktoken(
         tokens[:llm_max_tokens], model_name=tiktoken_model_name
@@ -138,14 +137,6 @@ async def _handle_entity_relation_summary(
     )
     use_prompt = prompt_template.format(**context_base)
     logger.debug(f"Trigger summary: {entity_or_relation_name}")
-
-    # Update pipeline status when LLM summary is needed
-    status_message = "Use LLM to re-summary description..."
-    logger.info(status_message)
-    if pipeline_status is not None and pipeline_status_lock is not None:
-        async with pipeline_status_lock:
-            pipeline_status["latest_message"] = status_message
-            pipeline_status["history_messages"].append(status_message)
 
     # Use LLM function with cache
     summary = await use_llm_func_with_cache(
@@ -175,6 +166,9 @@ async def _handle_single_entity_extraction(
         )
         return None
 
+    # Normalize entity name
+    entity_name = normalize_extracted_info(entity_name, is_entity=True)
+
     # Clean and validate entity type
     entity_type = clean_str(record_attributes[2]).strip('"')
     if not entity_type.strip() or entity_type.startswith('("'):
@@ -184,7 +178,9 @@ async def _handle_single_entity_extraction(
         return None
 
     # Clean and validate description
-    entity_description = clean_str(record_attributes[3]).strip('"')
+    entity_description = clean_str(record_attributes[3])
+    entity_description = normalize_extracted_info(entity_description)
+
     if not entity_description.strip():
         logger.warning(
             f"Entity extraction error: empty description for entity '{entity_name}' of type '{entity_type}'"
@@ -208,13 +204,20 @@ async def _handle_single_relationship_extraction(
     if len(record_attributes) < 5 or record_attributes[0] != '"relationship"':
         return None
     # add this record as edge
-    source = clean_str(record_attributes[1]).strip('"')
-    target = clean_str(record_attributes[2]).strip('"')
-    edge_description = clean_str(record_attributes[3]).strip('"')
-    edge_keywords = clean_str(record_attributes[4]).strip('"')
+    source = clean_str(record_attributes[1])
+    target = clean_str(record_attributes[2])
+
+    # Normalize source and target entity names
+    source = normalize_extracted_info(source, is_entity=True)
+    target = normalize_extracted_info(target, is_entity=True)
+
+    edge_description = clean_str(record_attributes[3])
+    edge_description = normalize_extracted_info(edge_description)
+
+    edge_keywords = clean_str(record_attributes[4]).strip('"').strip("'")
     edge_source_id = chunk_key
     weight = (
-        float(record_attributes[-1].strip('"'))
+        float(record_attributes[-1].strip('"').strip("'"))
         if is_float_regex(record_attributes[-1])
         else 1.0
     )
@@ -247,14 +250,6 @@ async def _merge_nodes_then_upsert(
 
     already_node = await knowledge_graph_inst.get_node(entity_name, namespace)
     if already_node is not None:
-        # Update pipeline status when a node that needs merging is found
-        status_message = f"Merging entity: {entity_name}"
-        logger.info(status_message)
-        if pipeline_status is not None and pipeline_status_lock is not None:
-            async with pipeline_status_lock:
-                pipeline_status["latest_message"] = status_message
-                pipeline_status["history_messages"].append(status_message)
-
         already_entity_types.append(already_node["entity_type"])
         already_source_ids.extend(
             split_string_by_multi_markers(already_node["source_id"], [GRAPH_FIELD_SEP])
@@ -281,15 +276,35 @@ async def _merge_nodes_then_upsert(
         set([dp["file_path"] for dp in nodes_data] + already_file_paths)
     )
 
-    logger.debug(f"file_path: {file_path}")
-    description = await _handle_entity_relation_summary(
-        entity_name,
-        description,
-        global_config,
-        pipeline_status,
-        pipeline_status_lock,
-        llm_response_cache,
-    )
+    force_llm_summary_on_merge = global_config["force_llm_summary_on_merge"]
+
+    num_fragment = description.count(GRAPH_FIELD_SEP) + 1
+    num_new_fragment = len(set([dp["description"] for dp in nodes_data]))
+
+    if num_fragment > 1:
+        if num_fragment >= force_llm_summary_on_merge:
+            status_message = f"LLM merge N: {entity_name} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+            description = await _handle_entity_relation_summary(
+                entity_name,
+                description,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+            )
+        else:
+            status_message = f"Merge N: {entity_name} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+
     node_data = dict(
         entity_id=entity_name,
         entity_type=entity_type,
@@ -323,16 +338,8 @@ async def _merge_edges_then_upsert(
     already_keywords = []
     already_file_paths = []
 
-    if await knowledge_graph_inst.has_edge(src_id, tgt_id, namespace):
-        # Update pipeline status when an edge that needs merging is found
-        status_message = f"Merging edge::: {src_id} - {tgt_id}"
-        logger.info(status_message)
-        if pipeline_status is not None and pipeline_status_lock is not None:
-            async with pipeline_status_lock:
-                pipeline_status["latest_message"] = status_message
-                pipeline_status["history_messages"].append(status_message)
-
-        already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id, namespace)
+    if await knowledge_graph_inst.has_edge(src_id, tgt_id, namespace=namespace):
+        already_edge = await knowledge_graph_inst.get_edge(src_id, tgt_id, namespace=namespace)
         # Handle the case where get_edge returns None or missing fields
         if already_edge:
             # Get weight with default 0.0 if missing
@@ -410,14 +417,38 @@ async def _merge_edges_then_upsert(
                 },
                 namespace=namespace,
             )
-    description = await _handle_entity_relation_summary(
-        f"({src_id}, {tgt_id})",
-        description,
-        global_config,
-        pipeline_status,
-        pipeline_status_lock,
-        llm_response_cache,
+
+    force_llm_summary_on_merge = global_config["force_llm_summary_on_merge"]
+
+    num_fragment = description.count(GRAPH_FIELD_SEP) + 1
+    num_new_fragment = len(
+        set([dp["description"] for dp in edges_data if dp.get("description")])
     )
+
+    if num_fragment > 1:
+        if num_fragment >= force_llm_summary_on_merge:
+            status_message = f"LLM merge E: {src_id} - {tgt_id} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+            description = await _handle_entity_relation_summary(
+                f"({src_id}, {tgt_id})",
+                description,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+            )
+        else:
+            status_message = f"Merge E: {src_id} - {tgt_id} | {num_new_fragment}+{num_fragment-num_new_fragment}"
+            logger.info(status_message)
+            if pipeline_status is not None and pipeline_status_lock is not None:
+                async with pipeline_status_lock:
+                    pipeline_status["latest_message"] = status_message
+                    pipeline_status["history_messages"].append(status_message)
+
     await knowledge_graph_inst.upsert_edge(
         src_id,
         tgt_id,
@@ -559,9 +590,10 @@ async def extract_entities(
         Args:
             chunk_key_dp (tuple[str, TextChunkSchema]):
                 ("chunk-xxxxxx", {"tokens": int, "content": str, "full_doc_id": str, "chunk_order_index": int})
-
+        Returns:
+            tuple: (maybe_nodes, maybe_edges) containing extracted entities and relationships
         """
-        nonlocal processed_chunks, total_entities_count, total_relations_count
+        nonlocal processed_chunks
         chunk_key = chunk_key_dp[0]
         chunk_dp = chunk_key_dp[1]
         content = chunk_dp["content"]
@@ -605,11 +637,17 @@ async def extract_entities(
                 glean_result, chunk_key, file_path
             )
 
-            # Merge results
+            # Merge results - only add entities and edges with new names
             for entity_name, entities in glean_nodes.items():
-                maybe_nodes[entity_name].extend(entities)
+                if (
+                    entity_name not in maybe_nodes
+                ):  # Only accetp entities with new name in gleaning stage
+                    maybe_nodes[entity_name].extend(entities)
             for edge_key, edges in glean_edges.items():
-                maybe_edges[edge_key].extend(edges)
+                if (
+                    edge_key not in maybe_edges
+                ):  # Only accetp edges with new name in gleaning stage
+                    maybe_edges[edge_key].extend(edges)
 
             if now_glean_index == entity_extract_max_gleaning - 1:
                 break
@@ -629,84 +667,100 @@ async def extract_entities(
         processed_chunks += 1
         entities_count = len(maybe_nodes)
         relations_count = len(maybe_edges)
-        log_message = f"  Chk {processed_chunks}/{total_chunks}: extracted {entities_count} Ent + {relations_count} Rel (deduplicated)"
+        log_message = f"Chk {processed_chunks}/{total_chunks}: extracted {entities_count} Ent + {relations_count} Rel"
         logger.info(log_message)
         if pipeline_status is not None:
             async with pipeline_status_lock:
                 pipeline_status["latest_message"] = log_message
                 pipeline_status["history_messages"].append(log_message)
 
-        # Use graph database lock to ensure atomic merges and updates
-        chunk_entities_data = []
-        chunk_relationships_data = []
+        # Return the extracted nodes and edges for centralized processing
+        return maybe_nodes, maybe_edges
 
-        async with graph_db_lock:
-            # Process and update entities
-            for entity_name, entities in maybe_nodes.items():
-                entity_data = await _merge_nodes_then_upsert(
-                    entity_name,
-                    entities,
-                    knowledge_graph_inst,
-                    global_config,
-                    pipeline_status,
-                    pipeline_status_lock,
-                    llm_response_cache,
-                    namespace,
-                )
-                chunk_entities_data.append(entity_data)
-
-            # Process and update relationships
-            for edge_key, edges in maybe_edges.items():
-                # Ensure edge direction consistency
-                sorted_edge_key = tuple(sorted(edge_key))
-                edge_data = await _merge_edges_then_upsert(
-                    sorted_edge_key[0],
-                    sorted_edge_key[1],
-                    edges,
-                    knowledge_graph_inst,
-                    global_config,
-                    pipeline_status,
-                    pipeline_status_lock,
-                    llm_response_cache,
-                    namespace,
-                )
-                chunk_relationships_data.append(edge_data)
-
-            # Update vector database (within the same lock to ensure atomicity)
-            if entity_vdb is not None and chunk_entities_data:
-                data_for_vdb = {
-                    compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
-                        "entity_name": dp["entity_name"],
-                        "entity_type": dp["entity_type"],
-                        "content": f"{dp['entity_name']}\n{dp['description']}",
-                        "source_id": dp["source_id"],
-                        "file_path": dp.get("file_path", "unknown_source"),
-                    }
-                    for dp in chunk_entities_data
-                }
-                await entity_vdb.upsert(data_for_vdb, workspace=workspace)
-
-            if relationships_vdb is not None and chunk_relationships_data:
-                data_for_vdb = {
-                    compute_mdhash_id(dp["src_id"] + dp["tgt_id"], prefix="rel-"): {
-                        "src_id": dp["src_id"],
-                        "tgt_id": dp["tgt_id"],
-                        "keywords": dp["keywords"],
-                        "content": f"{dp['src_id']}\t{dp['tgt_id']}\n{dp['keywords']}\n{dp['description']}",
-                        "source_id": dp["source_id"],
-                        "file_path": dp.get("file_path", "unknown_source"),
-                    }
-                    for dp in chunk_relationships_data
-                }
-                await relationships_vdb.upsert(data_for_vdb, workspace = workspace)
-
-            # Update counters
-            total_entities_count += len(chunk_entities_data)
-            total_relations_count += len(chunk_relationships_data)
-
-    # Handle all chunks in parallel
+    # Handle all chunks in parallel and collect results
     tasks = [_process_single_content(c) for c in ordered_chunks]
-    await asyncio.gather(*tasks)
+    chunk_results = await asyncio.gather(*tasks)
+
+    # Collect all nodes and edges from all chunks
+    all_nodes = defaultdict(list)
+    all_edges = defaultdict(list)
+
+    for maybe_nodes, maybe_edges in chunk_results:
+        # Collect nodes
+        for entity_name, entities in maybe_nodes.items():
+            all_nodes[entity_name].extend(entities)
+
+        # Collect edges with sorted keys for undirected graph
+        for edge_key, edges in maybe_edges.items():
+            sorted_edge_key = tuple(sorted(edge_key))
+            all_edges[sorted_edge_key].extend(edges)
+
+    # Centralized processing of all nodes and edges
+    entities_data = []
+    relationships_data = []
+
+    # Use graph database lock to ensure atomic merges and updates
+    async with graph_db_lock:
+        # Process and update all entities at once
+        for entity_name, entities in all_nodes.items():
+            entity_data = await _merge_nodes_then_upsert(
+                entity_name,
+                entities,
+                knowledge_graph_inst,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+                namespace,
+            )
+            entities_data.append(entity_data)
+
+        # Process and update all relationships at once
+        for edge_key, edges in all_edges.items():
+            edge_data = await _merge_edges_then_upsert(
+                edge_key[0],
+                edge_key[1],
+                edges,
+                knowledge_graph_inst,
+                global_config,
+                pipeline_status,
+                pipeline_status_lock,
+                llm_response_cache,
+                namespace,
+            )
+            relationships_data.append(edge_data)
+
+        # Update vector databases with all collected data
+        if entity_vdb is not None and entities_data:
+            data_for_vdb = {
+                compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
+                    "entity_name": dp["entity_name"],
+                    "entity_type": dp["entity_type"],
+                    "content": f"{dp['entity_name']}\n{dp['description']}",
+                    "source_id": dp["source_id"],
+                    "file_path": dp.get("file_path", "unknown_source"),
+                }
+                for dp in entities_data
+            }
+            await entity_vdb.upsert(data_for_vdb, workspace=workspace)
+
+        if relationships_vdb is not None and relationships_data:
+            data_for_vdb = {
+                compute_mdhash_id(dp["src_id"] + dp["tgt_id"], prefix="rel-"): {
+                    "src_id": dp["src_id"],
+                    "tgt_id": dp["tgt_id"],
+                    "keywords": dp["keywords"],
+                    "content": f"{dp['src_id']}\t{dp['tgt_id']}\n{dp['keywords']}\n{dp['description']}",
+                    "source_id": dp["source_id"],
+                    "file_path": dp.get("file_path", "unknown_source"),
+                }
+                for dp in relationships_data
+            }
+            await relationships_vdb.upsert(data_for_vdb, workspace=workspace)
+
+    # Update total counts
+    total_entities_count = len(entities_data)
+    total_relations_count = len(relationships_data)
 
     log_message = f"Extracted {total_entities_count} entities + {total_relations_count} relationships (total)"
     logger.info(log_message)
@@ -1078,14 +1132,14 @@ async def mix_kg_vector_query(
                     chunk_with_time = {
                         "content": chunk["content"],
                         "created_at": result.get("created_at", None),
-                        "file_path": chunk.get("file_path", "unknown_source"),
+                        "file_path": result.get("file_path", None),
                     }
                     valid_chunks.append(chunk_with_time)
 
             if not valid_chunks:
                 return None
 
-            maybe_trun_chunks:list[int] = truncate_list_by_token_size(
+            maybe_trun_chunks = truncate_list_by_token_size(
                 valid_chunks,
                 key=lambda x: x["content"],
                 max_token_size=query_param.max_token_for_text_unit,

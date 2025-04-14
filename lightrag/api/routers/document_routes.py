@@ -501,7 +501,10 @@ async def pipeline_enqueue_file(rag: LightRAG, file_path: Path, workspace: str =
                     content = result.document.export_to_markdown()
                 else:
                     if not pm.is_installed("python-docx"):  # type: ignore
-                        pm.install("docx")
+                        try:
+                            pm.install("python-docx")
+                        except Exception:
+                            pm.install("docx")
                     from docx import Document  # type: ignore
                     from io import BytesIO
                     from lightrag.doc_split_handle import DocSplitHandle, get_image_id_func
