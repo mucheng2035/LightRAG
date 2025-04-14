@@ -376,12 +376,13 @@ class DocumentManager:
         # Create input directory if it doesn't exist
         self.input_dir.mkdir(parents=True, exist_ok=True)
 
-    def scan_directory_for_new_files(self) -> List[Path]:
+    def scan_directory_for_new_files(self,  workspace: str = "default") -> List[Path]:
         """Scan input directory for new files"""
         new_files = []
+        workspace_dir = self.input_dir / workspace
         for ext in self.supported_extensions:
-            logger.debug(f"Scanning for {ext} files in {self.input_dir}")
-            for file_path in self.input_dir.rglob(f"*{ext}"):
+            logger.debug(f"Scanning for {ext} files in {workspace_dir}")
+            for file_path in workspace_dir.rglob(f"*{ext}"):
                 if file_path not in self.indexed_files:
                     new_files.append(file_path)
         return new_files
@@ -503,9 +504,13 @@ async def pipeline_enqueue_file(rag: LightRAG, file_path: Path, workspace: str =
                         pm.install("docx")
                     from docx import Document  # type: ignore
                     from io import BytesIO
-
+                    from lightrag.doc_split_handle import DocSplitHandle, get_image_id_func
                     docx_file = BytesIO(file)
                     doc = Document(docx_file)
+                    # doc_split_handle = DocSplitHandle()
+                    # image_list = []
+                    # content = doc_split_handle.to_md(doc, image_list, get_image_id_func())
+                    # logger.info(f"image_list:{len(image_list)}")
                     content = "\n".join(
                         [paragraph.text for paragraph in doc.paragraphs]
                     )
@@ -603,7 +608,7 @@ async def pipeline_index_file(rag: LightRAG, file_path: Path, workspace: str = "
         logger.error(traceback.format_exc())
 
 
-async def pipeline_index_files(rag: LightRAG, file_paths: List[Path]):
+async def pipeline_index_files(rag: LightRAG, file_paths: List[Path], workspace: str = "default", namespace: str = None):
     """Index multiple files sequentially to avoid high CPU load
 
     Args:
@@ -617,12 +622,12 @@ async def pipeline_index_files(rag: LightRAG, file_paths: List[Path]):
 
         # Process files sequentially
         for file_path in file_paths:
-            if await pipeline_enqueue_file(rag, file_path):
+            if await pipeline_enqueue_file(rag, file_path, workspace=workspace):
                 enqueued = True
 
         # Process the queue only if at least one file was successfully enqueued
         if enqueued:
-            await rag.apipeline_process_enqueue_documents()
+            await rag.apipeline_process_enqueue_documents(workspace=workspace, namespace=namespace)
     except Exception as e:
         logger.error(f"Error indexing files: {str(e)}")
         logger.error(traceback.format_exc())
@@ -665,10 +670,10 @@ async def save_temp_file(input_dir: Path, file: UploadFile = File(...)) -> Path:
     return temp_path
 
 
-async def run_scanning_process(rag: LightRAG, doc_manager: DocumentManager):
+async def run_scanning_process(rag: LightRAG, doc_manager: DocumentManager, workspace: str = "default", namespace: str = None):
     """Background task to scan and index documents"""
     try:
-        new_files = doc_manager.scan_directory_for_new_files()
+        new_files = doc_manager.scan_directory_for_new_files(workspace=workspace)
         total_files = len(new_files)
         logger.info(f"Found {total_files} new files to index.")
 
@@ -689,7 +694,7 @@ async def run_scanning_process(rag: LightRAG, doc_manager: DocumentManager):
             logger.info(
                 f"Processing batch {batch_num}/{total_batches} with {len(batch_files)} files"
             )
-            await pipeline_index_files(rag, batch_files)
+            await pipeline_index_files(rag, batch_files, workspace, namespace)
 
             # Log progress
             processed = min(i + batch_size, total_files)
@@ -711,7 +716,9 @@ def create_document_routes(
     @router.post(
         "/scan", response_model=ScanResponse, dependencies=[Depends(combined_auth)]
     )
-    async def scan_for_new_documents(background_tasks: BackgroundTasks):
+    async def scan_for_new_documents(background_tasks: BackgroundTasks,
+                                     workspace: str = Query(default="default", description="工作空间"),
+                                     namespace: str = Query(default=None, description="命名空间")):
         """
         Trigger the scanning process for new documents.
 
@@ -723,7 +730,7 @@ def create_document_routes(
             ScanResponse: A response object containing the scanning status
         """
         # Start the scanning process in the background
-        background_tasks.add_task(run_scanning_process, rag, doc_manager)
+        background_tasks.add_task(run_scanning_process, rag, doc_manager, workspace, namespace)
         return ScanResponse(
             status="scanning_started",
             message="Scanning process has been initiated in the background",

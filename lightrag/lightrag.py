@@ -101,7 +101,7 @@ class LightRAG:
     # Entity extraction
     # ---
 
-    entity_extract_max_gleaning: int = field(default=1)
+    entity_extract_max_gleaning: int = field( default=int(os.getenv("ENTITY_EXTRACT_MAX_GLEANING", 1)))
     """Maximum number of entity extraction attempts for ambiguous content."""
 
     entity_summary_to_max_tokens: int = field(
@@ -554,6 +554,8 @@ class LightRAG:
             split_by_character is None, this parameter is ignored.
             ids: single string of the document ID or list of unique document IDs, if not provided, MD5 hash IDs will be generated
             file_paths: single string of the file path or list of file paths, used for citation
+            workspace: workspace for document
+            namespace: namespace for split data
         """
         loop = always_get_an_event_loop()
         loop.run_until_complete(
@@ -582,8 +584,8 @@ class LightRAG:
             split_by_character is None, this parameter is ignored.
             ids: list of unique document IDs, if not provided, MD5 hash IDs will be generated
             file_paths: list of file paths corresponding to each document, used for citation
-            workspace: document for storage
-            namespace: namespace for storage
+            workspace: workspace for document
+            namespace: namespace for split data
         """
         await self.apipeline_enqueue_documents(input, ids, file_paths, workspace)
         await self.apipeline_process_enqueue_documents(
@@ -731,6 +733,7 @@ class LightRAG:
                     unique_content_with_paths[content] = path
 
             # Generate contents dict of MD5 hash IDs and documents with paths
+            # {"doc-xxx":{"content","", "file_path":""}}
             contents = {
                 compute_mdhash_id(content, prefix="doc-"): {
                     "content": content,
@@ -740,6 +743,7 @@ class LightRAG:
             }
 
         # 2. Remove duplicate contents
+        # {'content': ('doc-xx', 'file_path')}
         unique_contents = {}
         for id_, content_data in contents.items():
             content = content_data["content"]
@@ -776,6 +780,7 @@ class LightRAG:
         unique_new_doc_ids = await self.doc_status.filter_keys(all_new_doc_ids, workspace)
 
         # Log ignored document IDs
+        # multi thread processing
         ignored_ids = [
             doc_id for doc_id in unique_new_doc_ids if doc_id not in new_docs
         ]
@@ -815,8 +820,8 @@ class LightRAG:
         Args:
             split_by_character (str | None): Character to split the document on. If None, the document is split into chunks of `chunk_token_size` tokens.
             split_by_character_only (bool): If True, the document is split only on the specified character.
-            workspace (str): Workspace for document processing. Defaults to "default".
-            namespace (str): namespace for neo4j.
+            workspace (str): workspace for document processing. Defaults to "default".
+            namespace (str): namespace for data.
 
         1. Get all pending, failed, and abnormally terminated processing documents.
         2. Split document content into chunks
@@ -836,6 +841,7 @@ class LightRAG:
         async with pipeline_status_lock:
             # Ensure only one worker is processing documents
             if not pipeline_status.get("busy", False):
+                # query all documents by status
                 processing_docs, failed_docs, pending_docs = await asyncio.gather(
                     self.doc_status.get_docs_by_status(DocStatus.PROCESSING, workspace),
                     self.doc_status.get_docs_by_status(DocStatus.FAILED, workspace),
@@ -958,23 +964,23 @@ class LightRAG:
                                 workspace=workspace,
                             )
                         )
-                        # 实体
+
                         chunks_vdb_task = asyncio.create_task(
                             self.chunks_vdb.upsert(chunks, workspace)
                         )
-                        # 关系
+
                         entity_relation_task = asyncio.create_task(
                             self._process_entity_relation_graph(
                                 chunks, pipeline_status, pipeline_status_lock, workspace, namespace
                             )
                         )
-                        # 更新文档内容
+
                         full_docs_task = asyncio.create_task(
                             self.full_docs.upsert(
                                 {doc_id: {"content": status_doc.content}}, workspace
                             )
                         )
-                        # 本地缓存
+
                         text_chunks_task = asyncio.create_task(
                             self.text_chunks.upsert(chunks, workspace)
                         )
