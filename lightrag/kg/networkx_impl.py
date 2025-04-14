@@ -152,7 +152,7 @@ class NetworkXStorage(BaseGraphStorage):
         else:
             logger.warning(f"Node {node_id} not found in the graph for deletion.")
 
-    async def remove_nodes(self, nodes: list[str]):
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None):
         """Delete multiple nodes
 
         Importance notes:
@@ -168,7 +168,7 @@ class NetworkXStorage(BaseGraphStorage):
             if graph.has_node(node):
                 graph.remove_node(node)
 
-    async def remove_edges(self, edges: list[tuple[str, str]]):
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None):
         """Delete multiple edges
 
         Importance notes:
@@ -184,7 +184,7 @@ class NetworkXStorage(BaseGraphStorage):
             if graph.has_edge(source, target):
                 graph.remove_edge(source, target)
 
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """
         Get all node labels in the graph
         Returns:
@@ -362,7 +362,7 @@ class NetworkXStorage(BaseGraphStorage):
 
         return True
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all graph data from storage and clean up resources
 
         This method will:

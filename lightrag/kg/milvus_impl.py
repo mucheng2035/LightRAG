@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any, final
+from typing import Any, final, Optional
 from dataclasses import dataclass
 import numpy as np
 from lightrag.utils import logger, compute_mdhash_id
@@ -151,7 +151,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
         except Exception as e:
             logger.error(f"Error deleting entity {entity_name}: {e}")
 
-    async def delete_entity_relation(self, entity_name: str) -> None:
+    async def delete_entity_relation(self, entity_name: str, workspace: str) -> None:
         """Delete all relations associated with an entity
 
         Args:
@@ -288,7 +288,7 @@ class MilvusVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for IDs {ids}: {e}")
             return []
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all vector data from storage and clean up resources
 
         This method will delete all data from the Milvus collection.

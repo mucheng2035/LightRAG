@@ -240,6 +240,7 @@ async def _merge_nodes_then_upsert(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
+    workspace: str = "default",
     namespace: str = None,
 ):
     """Get existing nodes from knowledge graph use name,if exists, merge data, else create, then upsert."""
@@ -330,6 +331,7 @@ async def _merge_edges_then_upsert(
     pipeline_status: dict = None,
     pipeline_status_lock=None,
     llm_response_cache: BaseKVStorage | None = None,
+    workspace: str = "default",
     namespace: str = None,
 ):
     already_weights = []
@@ -685,6 +687,7 @@ async def extract_entities(
     all_nodes = defaultdict(list)
     all_edges = defaultdict(list)
 
+
     for maybe_nodes, maybe_edges in chunk_results:
         # Collect nodes
         for entity_name, entities in maybe_nodes.items():
@@ -698,7 +701,7 @@ async def extract_entities(
     # Centralized processing of all nodes and edges
     entities_data = []
     relationships_data = []
-
+    logger.info(f"workspace:{workspace}, namespace:{namespace}")
     # Use graph database lock to ensure atomic merges and updates
     async with graph_db_lock:
         # Process and update all entities at once
@@ -711,6 +714,7 @@ async def extract_entities(
                 pipeline_status,
                 pipeline_status_lock,
                 llm_response_cache,
+                workspace,
                 namespace,
             )
             entities_data.append(entity_data)
@@ -726,6 +730,7 @@ async def extract_entities(
                 pipeline_status,
                 pipeline_status_lock,
                 llm_response_cache,
+                workspace,
                 namespace,
             )
             relationships_data.append(edge_data)

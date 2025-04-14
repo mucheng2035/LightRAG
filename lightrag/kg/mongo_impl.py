@@ -189,7 +189,7 @@ class MongoKVStorage(BaseKVStorage):
             logger.error(f"Error deleting cache by modes {modes}: {e}")
             return False
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage by removing all documents in the collection.
 
         Returns:
@@ -290,7 +290,7 @@ class MongoDocStatusStorage(DocStatusStorage):
         # Mongo handles persistence automatically
         pass
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage by removing all documents in the collection.
 
         Returns:
@@ -669,7 +669,7 @@ class MongoGraphStorage(BaseGraphStorage):
     # -------------------------------------------------------------------------
     #
 
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """
         Get all existing node _id in the database
         Returns:
@@ -863,7 +863,7 @@ class MongoGraphStorage(BaseGraphStorage):
         # Mongo handles persistence automatically
         pass
 
-    async def remove_nodes(self, nodes: list[str]) -> None:
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None) -> None:
         """Delete multiple nodes
 
         Args:
@@ -883,7 +883,7 @@ class MongoGraphStorage(BaseGraphStorage):
 
         logger.debug(f"Successfully deleted nodes: {nodes}")
 
-    async def remove_edges(self, edges: list[tuple[str, str]]) -> None:
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None) -> None:
         """Delete multiple edges
 
         Args:
@@ -907,7 +907,7 @@ class MongoGraphStorage(BaseGraphStorage):
 
         logger.debug(f"Successfully deleted edges: {edges}")
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage by removing all documents in the collection.
 
         Returns:
@@ -1215,7 +1215,7 @@ class MongoVectorDBStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for IDs {ids}: {e}")
             return []
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage by removing all documents in the collection and recreating vector index.
 
         Returns:

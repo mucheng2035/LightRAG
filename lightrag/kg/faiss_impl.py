@@ -448,7 +448,7 @@ class FaissVectorDBStorage(BaseVectorStorage):
 
         return results
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all vector data from storage and clean up resources
 
         This method will:

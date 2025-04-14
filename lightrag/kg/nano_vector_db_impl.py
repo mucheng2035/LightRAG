@@ -305,7 +305,7 @@ class NanoVectorDBStorage(BaseVectorStorage):
         client = await self._get_client()
         return client.get(ids)
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all vector data from storage and clean up resources
 
         This method will:

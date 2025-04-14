@@ -7,6 +7,7 @@ from typing import Any, final, Optional
 import numpy as np
 import configparser
 
+from pandas import DataFrame
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -105,7 +106,7 @@ class NebulaStorage(BaseGraphStorage):
             logger.error(f"Failed to connect to Nebula Graph: {str(e)}")
             raise
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         pass
 
     def __post_init__(self):
@@ -226,14 +227,14 @@ class NebulaStorage(BaseGraphStorage):
                 query =  f''' MATCH (src)-[r]-(neighbor)
                        WHERE id(src) =='{source_node_id}' AND id(neighbor)=='{target_node_id}'
                       RETURN properties(r) as edge_properties
-                   '''   
+                   '''
                 result = session.execute(query).as_data_frame()
 
                 if len(result) > 1:
                     logger.warning(
                         f"Multiple edges found between '{source_node_id}' and '{target_node_id}'. Using first edge."
                     )
-                
+
                 try:
                     edge_result = result['edge_properties'][0]
                     logger.debug(f"Result: {edge_result}")
@@ -531,7 +532,7 @@ class NebulaStorage(BaseGraphStorage):
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=retry_if_exception_type((IOErrorException,)),
     )
-    async def remove_nodes(self, nodes: list[str]):
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None):
         """Delete multiple nodes"""
         async with self._connection_pool_lock:
             with self._connection_pool.session_context(
@@ -547,7 +548,7 @@ class NebulaStorage(BaseGraphStorage):
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=retry_if_exception_type((IOErrorException,)),
     )
-    async def remove_edges(self, edges: list[tuple[str, str]]):
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None):
         """Delete multiple edges"""
         async with self._connection_pool_lock:
             with self._connection_pool.session_context(

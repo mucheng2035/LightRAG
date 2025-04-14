@@ -408,7 +408,7 @@ class GremlinStorage(BaseGraphStorage):
             logger.error(f"Error during node deletion: {str(e)}")
             raise
 
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """
         Get all node entity_names in the graph
         Returns:
@@ -625,7 +625,7 @@ class GremlinStorage(BaseGraphStorage):
         )
         return result
 
-    async def remove_nodes(self, nodes: list[str]):
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None):
         """Delete multiple nodes
 
         Args:
@@ -634,7 +634,7 @@ class GremlinStorage(BaseGraphStorage):
         for node in nodes:
             await self.delete_node(node)
 
-    async def remove_edges(self, edges: list[tuple[str, str]]):
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None):
         """Delete multiple edges
 
         Args:
@@ -664,7 +664,7 @@ class GremlinStorage(BaseGraphStorage):
                 logger.error(f"Error during edge deletion: {str(e)}")
                 raise
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage by removing all nodes and relationships in the graph.
 
         This function deletes all nodes with the specified graph name property,

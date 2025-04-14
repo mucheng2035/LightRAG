@@ -458,7 +458,7 @@ class PGKVStorage(BaseKVStorage):
             logger.error(f"Error deleting cache by modes {modes}: {e}")
             return False
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             table_name = namespace_to_table_name(self.namespace)
@@ -471,7 +471,8 @@ class PGKVStorage(BaseKVStorage):
             drop_sql = SQL_TEMPLATES["drop_specifiy_table_workspace"].format(
                 table_name=table_name
             )
-            await self.db.execute(drop_sql, {"workspace": self.db.workspace})
+            workspace = workspace if workspace is not None else self.db.workspace
+            await self.db.execute(drop_sql, {"workspace": workspace})
             return {"status": "success", "message": "data dropped"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -778,7 +779,7 @@ class PGVectorStorage(BaseVectorStorage):
             logger.error(f"Error retrieving vector data for IDs {ids}: {e}")
             return []
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             table_name = namespace_to_table_name(self.namespace)
@@ -791,7 +792,8 @@ class PGVectorStorage(BaseVectorStorage):
             drop_sql = SQL_TEMPLATES["drop_specifiy_table_workspace"].format(
                 table_name=table_name
             )
-            await self.db.execute(drop_sql, {"workspace": self.db.workspace})
+            workspace = workspace if workspace is not None else self.db.workspace
+            await self.db.execute(drop_sql, {"workspace": workspace})
             return {"status": "success", "message": "data dropped"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -986,7 +988,7 @@ class PGDocStatusStorage(DocStatusStorage):
                 },
             )
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             table_name = namespace_to_table_name(self.namespace)
@@ -999,7 +1001,8 @@ class PGDocStatusStorage(DocStatusStorage):
             drop_sql = SQL_TEMPLATES["drop_specifiy_table_workspace"].format(
                 table_name=table_name
             )
-            await self.db.execute(drop_sql, {"workspace": self.db.workspace})
+            workspace = workspace if workspace is not None else self.db.workspace
+            await self.db.execute(drop_sql, {"workspace": workspace})
             return {"status": "success", "message": "data dropped"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
@@ -1420,7 +1423,7 @@ class PGGraphStorage(BaseGraphStorage):
             logger.error("Error during node deletion: {%s}", e)
             raise
 
-    async def remove_nodes(self, node_ids: list[str]) -> None:
+    async def remove_nodes(self, node_ids: list[str], namespace: Optional[str] = None) -> None:
         """
         Remove multiple nodes from the graph.
 
@@ -1442,7 +1445,7 @@ class PGGraphStorage(BaseGraphStorage):
             logger.error("Error during node removal: {%s}", e)
             raise
 
-    async def remove_edges(self, edges: list[tuple[str, str]]) -> None:
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None) -> None:
         """
         Remove multiple edges from the graph.
 
@@ -1465,7 +1468,7 @@ class PGGraphStorage(BaseGraphStorage):
                 logger.error(f"Error during edge deletion: {str(e)}")
                 raise
 
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """
         Get all labels (node IDs) in the graph.
 
@@ -1603,7 +1606,7 @@ class PGGraphStorage(BaseGraphStorage):
         )
         return kg
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             drop_query = f"""SELECT * FROM cypher('{self.graph_name}', $$

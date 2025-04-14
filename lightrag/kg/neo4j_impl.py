@@ -612,8 +612,8 @@ class Neo4JStorage(BaseGraphStorage):
         """
         try:
             edge_properties = edge_data
-            database = namespace if namespace is not None else self._DATABASE
-            async with self._driver.session(database=database) as session:
+            namespace = namespace if namespace is not None else self._DATABASE
+            async with self._driver.session(database=namespace) as session:
 
                 async def execute_upsert(tx: AsyncManagedTransaction):
                     query = """
@@ -667,9 +667,9 @@ class Neo4JStorage(BaseGraphStorage):
         result = KnowledgeGraph()
         seen_nodes = set()
         seen_edges = set()
-        database = namespace if namespace is not None else self._DATABASE
+        namespace = namespace if namespace is not None else self._DATABASE
         async with self._driver.session(
-            database=database, default_access_mode="READ"
+            database=namespace, default_access_mode="READ"
         ) as session:
             try:
                 if node_label == "*":
@@ -1010,14 +1010,15 @@ class Neo4JStorage(BaseGraphStorage):
         )
         return result
 
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """
         Get all existing node labels in the database
         Returns:
             ["Person", "Company", ...]  # Alphabetically sorted label list
         """
+        namespace = namespace if namespace is not None else self._DATABASE
         async with self._driver.session(
-            database=self._DATABASE, default_access_mode="READ"
+            database=namespace, default_access_mode="READ"
         ) as session:
             # Method 1: Direct metadata query (Available for Neo4j 4.3+)
             # query = "CALL db.labels() YIELD label RETURN label"
@@ -1069,7 +1070,7 @@ class Neo4JStorage(BaseGraphStorage):
             await result.consume()  # Ensure result is fully consumed
 
         try:
-            namespace = namespace or self._DATABASE
+            namespace = namespace if namespace is not None else self._DATABASE
             async with self._driver.session(database=namespace) as session:
                 await session.execute_write(_do_delete)
         except Exception as e:
@@ -1088,14 +1089,15 @@ class Neo4JStorage(BaseGraphStorage):
             )
         ),
     )
-    async def remove_nodes(self, nodes: list[str]):
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None):
         """Delete multiple nodes
 
         Args:
             nodes: List of node labels to be deleted
+            namespace: namespace for data
         """
         for node in nodes:
-            await self.delete_node(node)
+            await self.delete_node(node, namespace=namespace)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -1109,7 +1111,7 @@ class Neo4JStorage(BaseGraphStorage):
             )
         ),
     )
-    async def remove_edges(self, edges: list[tuple[str, str]]):
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None):
         """Delete multiple edges
 
         Args:
@@ -1129,13 +1131,14 @@ class Neo4JStorage(BaseGraphStorage):
                 await result.consume()  # Ensure result is fully consumed
 
             try:
-                async with self._driver.session(database=self._DATABASE) as session:
+                namespace = namespace if namespace is not None else self._DATABASE
+                async with self._driver.session(database=namespace) as session:
                     await session.execute_write(_do_delete_edge)
             except Exception as e:
                 logger.error(f"Error during edge deletion: {str(e)}")
                 raise
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all data from storage and clean up resources
 
         This method will delete all nodes and relationships in the Neo4j database.
@@ -1146,16 +1149,17 @@ class Neo4JStorage(BaseGraphStorage):
             - On failure: {"status": "error", "message": "<error details>"}
         """
         try:
-            async with self._driver.session(database=self._DATABASE) as session:
+            namespace = namespace if namespace is not None else self._DATABASE
+            async with self._driver.session(database=namespace) as session:
                 # Delete all nodes and relationships
                 query = "MATCH (n) DETACH DELETE n"
                 result = await session.run(query)
                 await result.consume()  # Ensure result is fully consumed
 
                 logger.info(
-                    f"Process {os.getpid()} drop Neo4j database {self._DATABASE}"
+                    f"Process {os.getpid()} drop Neo4j database {namespace}"
                 )
                 return {"status": "success", "message": "data dropped"}
         except Exception as e:
-            logger.error(f"Error dropping Neo4j database {self._DATABASE}: {e}")
+            logger.error(f"Error dropping Neo4j database {namespace}: {e}")
             return {"status": "error", "message": str(e)}

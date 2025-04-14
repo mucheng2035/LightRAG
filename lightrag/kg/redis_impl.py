@@ -169,7 +169,7 @@ class RedisKVStorage(BaseKVStorage):
         except Exception:
             return False
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage by removing all keys under the current namespace.
 
         Returns:

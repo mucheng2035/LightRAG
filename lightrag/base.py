@@ -118,7 +118,7 @@ class StorageNameSpace(ABC):
         """Commit the storage operations after indexing"""
 
     @abstractmethod
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all data from storage and clean up resources
 
         This abstract method defines the contract for dropping all data from a storage implementation.

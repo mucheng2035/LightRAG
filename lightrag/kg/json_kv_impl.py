@@ -172,7 +172,7 @@ class JsonKVStorage(BaseKVStorage):
         except Exception:
             return False
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all data from storage and clean up resources
            This action will persistent the data to disk immediately.
 

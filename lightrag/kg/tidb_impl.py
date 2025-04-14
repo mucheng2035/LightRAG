@@ -340,7 +340,7 @@ class TiDBKVStorage(BaseKVStorage):
             logger.error(f"Error deleting cache by modes {modes}: {e}")
             return False
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             table_name = namespace_to_table_name(self.namespace)
@@ -553,7 +553,7 @@ class TiDBVectorDBStorage(BaseVectorStorage):
         # Ti handles persistence automatically
         pass
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             table_name = namespace_to_table_name(self.namespace)
@@ -858,7 +858,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         # Ti handles persistence automatically
         pass
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop the storage"""
         try:
             drop_sql = """
@@ -892,7 +892,7 @@ class TiDBGraphStorage(BaseGraphStorage):
             f"Node {node_id} and its related edges have been deleted from the graph"
         )
 
-    async def get_all_labels(self) -> list[str]:
+    async def get_all_labels(self, namespace: Optional[str] = None) -> list[str]:
         """Get all entity types (labels) in the database
 
         Returns:
@@ -1009,7 +1009,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         )
         return result
 
-    async def remove_nodes(self, nodes: list[str]):
+    async def remove_nodes(self, nodes: list[str], namespace: Optional[str] = None):
         """Delete multiple nodes
 
         Args:
@@ -1018,7 +1018,7 @@ class TiDBGraphStorage(BaseGraphStorage):
         for node_id in nodes:
             await self.delete_node(node_id)
 
-    async def remove_edges(self, edges: list[tuple[str, str]]):
+    async def remove_edges(self, edges: list[tuple[str, str]], namespace: Optional[str] = None):
         """Delete multiple edges
 
         Args:

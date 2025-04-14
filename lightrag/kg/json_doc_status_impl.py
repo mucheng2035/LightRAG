@@ -150,7 +150,7 @@ class JsonDocStatusStorage(DocStatusStorage):
             if any_deleted:
                 await set_all_update_flags(self.namespace)
 
-    async def drop(self) -> dict[str, str]:
+    async def drop(self, namespace: Optional[str] = None, workspace: str="default") -> dict[str, str]:
         """Drop all document status data from storage and clean up resources
 
         This method will:

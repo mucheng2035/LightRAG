@@ -704,7 +704,7 @@ async def handle_cache(
     #     1. All query mode: enable_llm_cache is True and embedding simularity is not enabled
     #     2. Entity extract: enable_llm_cache_for_entity_extract is True
     if exists_func(hashing_kv, "get_by_mode_and_id"):
-        mode_cache = await hashing_kv.get_by_mode_and_id(mode, args_hash, workspace) or {}
+        mode_cache = await hashing_kv.get_by_mode_and_id(mode, args_hash, workspace=workspace) or {}
     else:
         mode_cache = await hashing_kv.get_by_id(mode, workspace=workspace) or {}
     if args_hash in mode_cache:
